@@ -27,7 +27,7 @@ export class UnifiedOutputNode extends BaseNode {
   protected async prep(
     context: NodeExecutionContext,
   ): Promise<{ message: FluctMessage; source: MessageSource }> {
-    this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
     const message = context.sharedData.inputMessage as FluctMessage;
     const processedContent = context.sharedData.processedContent as
       | MessageContent
@@ -63,8 +63,8 @@ export class UnifiedOutputNode extends BaseNode {
     prepResult: unknown,
     context: NodeExecutionContext,
   ): Promise<{ source: MessageSource; action: string }> {
-    this.logger.debug(`[exec] Context:\n${JSON.stringify(context, null, 2)}`);
-    this.logger.debug(`[exec] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
+    //this.logger.debug(`[exec] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[exec] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
     const { message, source } = prepResult as { message: FluctMessage; source: MessageSource };
 
     this.logger.debug(
@@ -83,9 +83,9 @@ export class UnifiedOutputNode extends BaseNode {
     prepResult: unknown,
     execResult: unknown,
   ): Promise<string | undefined> {
-    this.logger.debug(`[post] Context:\n${JSON.stringify(context, null, 2)}`);
-    this.logger.debug(`[post] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
-    this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
+    //this.logger.debug(`[post] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[post] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
+    //this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
     const result = execResult as { source: MessageSource; action: string };
     
     // Store source in shared data for output nodes

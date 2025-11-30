@@ -19,6 +19,15 @@ export type {
   FrameworkOptions,
   FrameworkInvokeOptions,
   InterruptConfig,
+  // Tool response types
+  ToolResponse,
+  ToolSuccessResponse,
+  ToolErrorResponse,
+  ToolExecutionResult,
+  ToolResponseMetadata,
+  // Tool parameter types
+  ToolParams,
+  InferToolParams,
 } from "./types";
 
 // Core interfaces
@@ -41,6 +50,14 @@ export { UniversalBaseAdapter, BaseAdapter } from "./core/base-adapter";
 export { UniversalToolRegistry, ToolRegistry } from "./utils/tool-registry";
 export { normalizeInput, extractUserInput } from "./utils/input-normalizer";
 export { toolToText } from "./utils/tool-utils";
+export {
+  createSuccessResponse,
+  createErrorResponse,
+  withExecutionTime,
+  formatToolResponseForLLM,
+  normalizeToolResult,
+  wrapToolExecution,
+} from "./utils/tool-response";
 
 // Re-export types for convenience
 export { UniversalAgentConfigSchema } from "./types";

@@ -8,9 +8,13 @@ import { ConfigService } from '@nestjs/config';
 import { BaseNode } from '../../core/base-node';
 import { NodeExecutionContext } from '../../types/workflow.types';
 import { FluctMessage, MessageType, MessageContent } from '../../types/message.types';
-import { UniversalAgent, UniversalAgentConfig, UniversalTool } from '../../../universal-agent';
+import { UniversalAgent, UniversalAgentConfig, UniversalTool, UniversalFramework } from '../../../universal-agent';
+import { MemorySaver } from "@langchain/langgraph";
 import { AgentToolsService } from '../../services/agent-tools.service';
 import { ChatOpenAI } from '@langchain/openai';
+import OpenAI from "openai";
+import { v4 as uuidv4 } from 'uuid';
+
 
 export interface AIAgentConfig {
   framework?: 'langchain' | 'langgraph' | 'crewai' | 'deepagents' | 'openai-agents' | 'pocketflow' | 'custom';
@@ -46,7 +50,7 @@ export class AIAgentNode extends BaseNode {
   protected async prep(
     context: NodeExecutionContext,
   ): Promise<{ message: FluctMessage; user: any; userInput: string }> {
-    this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
     const message = context.sharedData.inputMessage as FluctMessage;
     const user = context.sharedData.user as any;
 
@@ -70,8 +74,8 @@ export class AIAgentNode extends BaseNode {
     prepResult: unknown,
     context: NodeExecutionContext,
   ): Promise<MessageContent> {
-    this.logger.debug(`[exec] Context:\n${JSON.stringify(context, null, 2)}`);
-    this.logger.debug(`[exec] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
+    //this.logger.debug(`[exec] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[exec] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
     const { userInput, user } = prepResult as { message: FluctMessage; user: any; userInput: string };
     const config = this.config as AIAgentConfig;
 
@@ -88,8 +92,14 @@ export class AIAgentNode extends BaseNode {
       // Invoke agent with user input
       this.logger.debug(`Invoking AI agent with input: ${userInput}`);
       const result = await this.agent.invoke(userInput, {
-        temperature: config.temperature ?? 0.7,
-        maxTokens: config.maxTokens,
+        framework: {
+          deepagents: {
+            configurable: {
+              thread_id: uuidv4(),
+              recursion_limit: 5,
+            },
+          }
+        },
       });
 
       this.logger.debug(`AI Agent response: ${JSON.stringify(result, null, 2)}`);
@@ -124,9 +134,9 @@ export class AIAgentNode extends BaseNode {
     prepResult: unknown,
     execResult: unknown,
   ): Promise<string | undefined> {
-    this.logger.debug(`[post] Context:\n${JSON.stringify(context, null, 2)}`);
-    this.logger.debug(`[post] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
-    this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
+    //this.logger.debug(`[post] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[post] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
+    //this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
     const processedContent = execResult as MessageContent;
 
     // Store processed content for output nodes
@@ -155,8 +165,10 @@ export class AIAgentNode extends BaseNode {
       // Create model based on provider
       const model = this.createModel(config);
 
+      const checkpointer = new MemorySaver();
+
       // Get system prompt
-      const systemPrompt = this.getSystemPrompt(config, user);
+      const systemPrompt = `You are Fluct's Maritime Assistant.`;
 
       // Create agent configuration
       const agentConfig: UniversalAgentConfig = {
@@ -165,13 +177,18 @@ export class AIAgentNode extends BaseNode {
         tools,
         systemPrompt,
         options: {
-          temperature: config.temperature ?? 0.7,
-          maxTokens: config.maxTokens,
+          framework: {
+            deepagents: {
+              checkpointer: checkpointer,
+              interruptOn: {},
+            },
+          },
         },
       };
 
       // Create and initialize agent
       this.agent = new UniversalAgent(agentConfig);
+
       await this.agent.init();
 
       this.agentInitialized = true;
@@ -196,10 +213,10 @@ export class AIAgentNode extends BaseNode {
       execute: async (...args: any[]) => {
         // Extract parameters (could be object or array)
         const params = args.length === 1 && typeof args[0] === 'object' ? args[0] : { input: args[0] };
-        
+
         // Add user context
         const context = { userId: user?.id };
-        
+
         // Call original execute with params and context
         return await tool.execute(params, context);
       },
@@ -208,58 +225,46 @@ export class AIAgentNode extends BaseNode {
 
   /**
    * Create model instance based on configuration
+   * Uses the createModel pattern from universal-agent
    */
   private createModel(config: AIAgentConfig): any {
-    const provider = config.modelProvider || 'openrouter';
+    const framework = (config.framework || 'langchain') as UniversalFramework;
     const modelName = config.modelName || 'openai/gpt-4o-mini';
     const apiKey = config.apiKey || this.configService.get<string>('OPENROUTER_API_KEY') || this.configService.get<string>('OPENAI_API_KEY');
-    const baseURL = config.baseURL || (provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : undefined);
 
     if (!apiKey) {
-      throw new Error(`API key not found for provider: ${provider}. Please set OPENROUTER_API_KEY or OPENAI_API_KEY environment variable.`);
+      throw new Error(`API key not found. Please set OPENROUTER_API_KEY or OPENAI_API_KEY environment variable.`);
     }
 
-    // For LangChain, create ChatOpenAI instance
-    if (config.framework === 'langchain' || !config.framework) {
+    // Use ChatOpenAI for deepagents and langchain frameworks
+    if (framework === 'deepagents' || framework === 'langchain') {
       return new ChatOpenAI({
         model: modelName,
-        apiKey: apiKey,
-        configuration: baseURL ? { baseURL } : undefined,
         temperature: config.temperature ?? 0.7,
+        apiKey: apiKey,
+        configuration: {
+          baseURL: 'https://openrouter.ai/api/v1',
+          defaultHeaders: {
+            'HTTP-Referer': this.configService.get<string>('OPENROUTER_HTTP_REFERER') || 'https://github.com/fluct/fluctbot',
+            'X-Title': 'FluctBot',
+          },
+        },
+        timeout: 60 * 1000,
+      });
+    } else {
+
+      return new OpenAI({
+        apiKey: process.env.OPENROUTER_API_KEY,
+        baseURL: "https://openrouter.ai/api/v1",
+        defaultHeaders: {
+          "HTTP-Referer": process.env.OPENROUTER_HTTP_REFERER || "https://github.com/yourusername/universal-agent",
+          "X-Title": "Universal Agent",
+        },
       });
     }
-
-    // For other frameworks, return model as-is (should be provided in config)
-    return config.model || modelName;
   }
 
-  /**
-   * Get system prompt for the agent
-   */
-  private getSystemPrompt(config: AIAgentConfig, user: any): string {
-    if (config.systemPrompt) {
-      return config.systemPrompt;
-    }
 
-    // Default system prompt
-    return `You are FluctBot, an AI assistant for maritime operations. You help users manage their fleets, track vessels, set reminders, and manage their subscriptions.
-
-User Information:
-- User ID: ${user?.id || 'Unknown'}
-- Name: ${user?.name || 'Unknown'}
-
-Available Capabilities:
-- Fleet Management: Create, list, rename, delete fleets, and manage vessels within fleets
-- Subscription Management: View subscription details and credit usage
-
-When users ask questions or request actions:
-1. Use the available tools to perform actions (create fleets, add vessels, etc.)
-2. Provide clear, helpful responses
-3. Format responses in HTML for better readability (use <b> for bold, <i> for italic, etc.)
-4. If a tool execution fails, explain the error clearly to the user
-
-Be conversational, helpful, and professional. Always confirm actions when using tools.`;
-  }
 
   validateConfig(): boolean {
     return true;

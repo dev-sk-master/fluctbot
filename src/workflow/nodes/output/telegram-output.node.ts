@@ -40,7 +40,7 @@ export class TelegramOutputNode extends BaseNode {
   protected async prep(
     context: NodeExecutionContext,
   ): Promise<MessageResponse> {
-    this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
     const message = context.sharedData.inputMessage as FluctMessage;
     const processedContent = context.sharedData.processedContent as
       | MessageContent
@@ -89,8 +89,8 @@ export class TelegramOutputNode extends BaseNode {
     prepResult: unknown,
     context: NodeExecutionContext,
   ): Promise<MessageResponse> {
-    this.logger.debug(`[exec] Context:\n${JSON.stringify(context, null, 2)}`);
-    this.logger.debug(`[exec] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
+    //this.logger.debug(`[exec] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[exec] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
     const response = prepResult as MessageResponse;
 
     this.logger.debug(
@@ -139,9 +139,9 @@ export class TelegramOutputNode extends BaseNode {
     prepResult: unknown,
     execResult: unknown,
   ): Promise<string | undefined> {
-    this.logger.debug(`[post] Context:\n${JSON.stringify(context, null, 2)}`);
-    this.logger.debug(`[post] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
-    this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
+    //this.logger.debug(`[post] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[post] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
+    //this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
     const response = execResult as MessageResponse;
 
     // Store response in shared data

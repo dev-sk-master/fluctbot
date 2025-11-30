@@ -8,6 +8,7 @@ import {
   UniversalTool,
 } from "../types";
 import { normalizeInput } from "../utils/input-normalizer";
+import { normalizeToolResult } from "../utils/tool-response";
 
 
 /**
@@ -29,14 +30,39 @@ export class DeepAgentsAdapter extends UniversalBaseAdapter {
 
         return tool(
           async (params: any) => {
+            const startTime = Date.now();
             const toolParams = typeof params === "object" && params !== null
               ? params
               : { input: params };
 
             try {
-              return await universalTool.execute(toolParams);
-            } catch {
-              return await universalTool.execute(...Object.values(toolParams));
+              const rawResult = await universalTool.execute(toolParams);
+              const executionTime = Date.now() - startTime;
+              
+              // Normalize result to standardized format (handles any return type)
+              const normalizedResult = normalizeToolResult(
+                rawResult,
+                universalTool.name,
+                executionTime
+              );
+              
+              // For LLM consumption, return the summary or formatted response
+              // LangChain/DeepAgents expects string responses
+              return normalizedResult.summary || JSON.stringify(normalizedResult);
+            } catch (error) {
+              const executionTime = Date.now() - startTime;
+              const errorResult = normalizeToolResult(
+                {
+                  success: false,
+                  message: error instanceof Error ? error.message : String(error),
+                  summary: `Error: ${error instanceof Error ? error.message : String(error)}`,
+                },
+                universalTool.name,
+                executionTime
+              );
+              
+              // Return error as string for LLM
+              return errorResult.summary || JSON.stringify(errorResult);
             }
           },
           {

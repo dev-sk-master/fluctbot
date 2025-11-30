@@ -30,7 +30,7 @@ export class AccessControlNode extends BaseNode {
   protected async prep(
     context: NodeExecutionContext,
   ): Promise<{ message: FluctMessage; platform: Platform | null; platformIdentifier: string | null }> {
-    this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
     const message = context.message as FluctMessage;
     const metadata = message.metadata;
 
@@ -45,8 +45,8 @@ export class AccessControlNode extends BaseNode {
     prepResult: unknown,
     context: NodeExecutionContext,
   ): Promise<{ action: string; user?: any }> {
-    this.logger.debug(`[exec] Context:\n${JSON.stringify(context, null, 2)}`);
-    this.logger.debug(`[exec] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
+    //this.logger.debug(`[exec] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[exec] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
     const { message, platform, platformIdentifier } = prepResult as {
       message: FluctMessage;
       platform: Platform | null;
@@ -146,9 +146,9 @@ export class AccessControlNode extends BaseNode {
     prepResult: unknown,
     execResult: unknown,
   ): Promise<string | undefined> {
-    this.logger.debug(`[post] Context:\n${JSON.stringify(context, null, 2)}`);
-    this.logger.debug(`[post] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
-    this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
+    //this.logger.debug(`[post] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[post] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
+    //this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
     const result = execResult as { action: string };
     // Return the action for routing
     return result.action;

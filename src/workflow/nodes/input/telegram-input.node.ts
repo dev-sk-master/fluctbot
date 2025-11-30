@@ -39,7 +39,7 @@ export class TelegramInputNode extends BaseNode {
   protected async prep(
     context: NodeExecutionContext,
   ): Promise<unknown> {
-    this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
     // The message should already be a FluctMessage if coming from Telegram service
     // But we can validate and enhance it here
     const message = context.message as FluctMessage;
@@ -65,8 +65,8 @@ export class TelegramInputNode extends BaseNode {
     prepResult: unknown,
     context: NodeExecutionContext,
   ): Promise<FluctMessage> {
-    this.logger.debug(`[exec] Context:\n${JSON.stringify(context, null, 2)}`);
-    this.logger.debug(`[exec] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
+    //this.logger.debug(`[exec] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[exec] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
     const message = prepResult as FluctMessage;
 
     // Validate message structure
@@ -92,9 +92,9 @@ export class TelegramInputNode extends BaseNode {
     prepResult: unknown,
     execResult: unknown,
   ): Promise<string | undefined> {
-    this.logger.debug(`[post] Context:\n${JSON.stringify(context, null, 2)}`);
-    this.logger.debug(`[post] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
-    this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
+    //this.logger.debug(`[post] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[post] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
+    //this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
     const message = execResult as FluctMessage;
 
     // Store in shared data for next nodes

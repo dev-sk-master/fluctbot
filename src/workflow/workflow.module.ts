@@ -25,6 +25,8 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { CommonModule } from '../common/common.module';
 import { FleetsModule } from '../fleets/fleets.module';
 import { AgentToolsService } from './services/agent-tools.service';
+import { WebSearchToolsRegistry } from './services/tool-registries/web-search-tools.registry';
+import { DatalisticToolsRegistry } from './services/tool-registries/datalistic-tools.registry';
 import { forwardRef } from '@nestjs/common';
 
 @Module({
@@ -39,6 +41,8 @@ import { forwardRef } from '@nestjs/common';
     WorkflowEngine,
     NodeRegistry,
     WorkflowService,
+    WebSearchToolsRegistry,
+    DatalisticToolsRegistry,
     AgentToolsService,
     TelegramInputNodeFactory,
     TelegramOutputNodeFactory,
@@ -58,9 +62,9 @@ export class WorkflowModule implements OnModuleInit {
   constructor(
     private readonly nodeRegistry: NodeRegistry,
     private readonly workflowService: WorkflowService,
-    private readonly inputFactory: TelegramInputNodeFactory,
-    private readonly outputFactory: TelegramOutputNodeFactory,
-    private readonly processorFactory: EchoProcessorNodeFactory,
+    private readonly telegramInputFactory: TelegramInputNodeFactory,
+    private readonly telegramOutputFactory: TelegramOutputNodeFactory,
+    private readonly echoProcessorFactory: EchoProcessorNodeFactory,
     private readonly accessControlFactory: AccessControlNodeFactory,
     private readonly onboardingFactory: OnboardingNodeFactory,
     private readonly webChatInputFactory: WebChatInputNodeFactory,
@@ -73,9 +77,9 @@ export class WorkflowModule implements OnModuleInit {
 
   async onModuleInit() {
     // Register node factories
-    this.nodeRegistry.register(this.inputFactory);
-    this.nodeRegistry.register(this.outputFactory);
-    this.nodeRegistry.register(this.processorFactory);
+    this.nodeRegistry.register(this.telegramInputFactory);
+    this.nodeRegistry.register(this.telegramOutputFactory);
+    this.nodeRegistry.register(this.echoProcessorFactory);
     this.nodeRegistry.register(this.accessControlFactory);
     this.nodeRegistry.register(this.onboardingFactory);
     this.nodeRegistry.register(this.webChatInputFactory);

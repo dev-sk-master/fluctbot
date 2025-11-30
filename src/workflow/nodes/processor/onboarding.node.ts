@@ -64,7 +64,7 @@ export class OnboardingNode extends BaseNode {
   protected async prep(
     context: NodeExecutionContext,
   ): Promise<{ message: FluctMessage; state: any; onboardingUser: any }> {
-    this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
     const message = context.message as FluctMessage;
     const metadata = message.metadata;
 
@@ -145,8 +145,8 @@ export class OnboardingNode extends BaseNode {
     prepResult: unknown,
     context: NodeExecutionContext,
   ): Promise<{ action: string; response?: string; user?: any }> {
-    this.logger.debug(`[exec] Context:\n${JSON.stringify(context, null, 2)}`);
-    this.logger.debug(`[exec] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
+    //this.logger.debug(`[exec] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[exec] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
     const { message, state, onboardingUser } = prepResult as {
       message: FluctMessage;
       state: any;
@@ -211,9 +211,9 @@ export class OnboardingNode extends BaseNode {
     prepResult: unknown,
     execResult: unknown,
   ): Promise<string | undefined> {
-    this.logger.debug(`[post] Context:\n${JSON.stringify(context, null, 2)}`);
-    this.logger.debug(`[post] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
-    this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
+    //this.logger.debug(`[post] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[post] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
+    //this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
     const result = execResult as { action: string; response?: string; user?: any };
 
     // Store response message if provided

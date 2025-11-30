@@ -34,7 +34,7 @@ export class EchoProcessorNode extends BaseNode {
   protected async prep(
     context: NodeExecutionContext,
   ): Promise<MessageContent> {
-    this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
     const message = context.sharedData.inputMessage as FluctMessage;
 
     if (!message || !message.content) {
@@ -51,8 +51,8 @@ export class EchoProcessorNode extends BaseNode {
     prepResult: unknown,
     context: NodeExecutionContext,
   ): Promise<MessageContent> {
-    this.logger.debug(`[exec] Context:\n${JSON.stringify(context, null, 2)}`);
-    this.logger.debug(`[exec] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
+    //this.logger.debug(`[exec] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[exec] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
     const inputContent = prepResult as MessageContent;
     const config = this.config as EchoProcessorConfig;
 
@@ -88,9 +88,9 @@ export class EchoProcessorNode extends BaseNode {
     prepResult: unknown,
     execResult: unknown,
   ): Promise<string | undefined> {
-    this.logger.debug(`[post] Context:\n${JSON.stringify(context, null, 2)}`);
-    this.logger.debug(`[post] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
-    this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
+    //this.logger.debug(`[post] Context:\n${JSON.stringify(context, null, 2)}`);
+    //this.logger.debug(`[post] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
+    //this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
     const processedContent = execResult as MessageContent;
 
     // Store processed content for output nodes
