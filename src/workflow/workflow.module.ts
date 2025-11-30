@@ -16,11 +16,15 @@ import { WebChatInputNodeFactory } from './nodes/factories/web-chat-input.factor
 import { WebChatOutputNodeFactory } from './nodes/factories/web-chat-output.factory';
 import { UnifiedInputNodeFactory } from './nodes/factories/unified-input.factory';
 import { UnifiedOutputNodeFactory } from './nodes/factories/unified-output.factory';
+import { CommandNodeFactory } from './nodes/factories/command.factory';
+import { AIAgentNodeFactory } from './nodes/factories/ai-agent.factory';
 import { WorkflowBuilder } from './builders/workflow.builder';
 import { TelegramModule } from './sources/telegram/telegram.module';
 import { UsersModule } from '../users/users.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { CommonModule } from '../common/common.module';
+import { FleetsModule } from '../fleets/fleets.module';
+import { AgentToolsService } from './services/agent-tools.service';
 import { forwardRef } from '@nestjs/common';
 
 @Module({
@@ -29,11 +33,13 @@ import { forwardRef } from '@nestjs/common';
     UsersModule,
     SubscriptionsModule,
     CommonModule,
+    FleetsModule,
   ],
   providers: [
     WorkflowEngine,
     NodeRegistry,
     WorkflowService,
+    AgentToolsService,
     TelegramInputNodeFactory,
     TelegramOutputNodeFactory,
     EchoProcessorNodeFactory,
@@ -43,6 +49,8 @@ import { forwardRef } from '@nestjs/common';
     WebChatOutputNodeFactory,
     UnifiedInputNodeFactory,
     UnifiedOutputNodeFactory,
+    CommandNodeFactory,
+    AIAgentNodeFactory,
   ],
   exports: [WorkflowService, WorkflowEngine, NodeRegistry],
 })
@@ -59,6 +67,8 @@ export class WorkflowModule implements OnModuleInit {
     private readonly webChatOutputFactory: WebChatOutputNodeFactory,
     private readonly unifiedInputFactory: UnifiedInputNodeFactory,
     private readonly unifiedOutputFactory: UnifiedOutputNodeFactory,
+    private readonly commandFactory: CommandNodeFactory,
+    private readonly aiAgentFactory: AIAgentNodeFactory,
   ) {}
 
   async onModuleInit() {
@@ -72,6 +82,8 @@ export class WorkflowModule implements OnModuleInit {
     this.nodeRegistry.register(this.webChatOutputFactory);
     this.nodeRegistry.register(this.unifiedInputFactory);
     this.nodeRegistry.register(this.unifiedOutputFactory);
+    this.nodeRegistry.register(this.commandFactory);
+    this.nodeRegistry.register(this.aiAgentFactory);
 
     // Create unified workflow
     this.createUnifiedWorkflow();
@@ -123,12 +135,32 @@ export class WorkflowModule implements OnModuleInit {
       config: {},
     };
 
+    const commandNode = {
+      id: 'command',
+      type: 'command',
+      name: 'Command Processor',
+      config: {},
+    };
+
     const echoProcessorNode = {
       id: 'echo-processor',
       type: 'echo-processor',
       name: 'Echo Processor',
       config: {
         transformText: false,
+      },
+    };
+
+    const aiAgentNode = {
+      id: 'ai-agent',
+      type: 'ai-agent',
+      name: 'AI Agent',
+      config: {
+        framework: 'deepagents',
+        modelProvider: 'openrouter',
+        modelName: 'openai/gpt-4o-mini',
+        temperature: 0.7,
+        maxTokens: 2000,
       },
     };
 
@@ -159,7 +191,9 @@ export class WorkflowModule implements OnModuleInit {
       .addNode(webChatInputNode)
       .addNode(accessControlNode)
       .addNode(onboardingNode)
+      .addNode(commandNode)
       .addNode(echoProcessorNode)
+      .addNode(aiAgentNode)
       .addNode(unifiedOutputNode)
       .addNode(telegramOutputNode)
       .addNode(webChatOutputNode)
@@ -168,11 +202,16 @@ export class WorkflowModule implements OnModuleInit {
       .connect('unified-input', 'web-chat-input', 'web_chat_input') // Route to Web Chat input
       .connect('telegram-input', 'access-control')
       .connect('web-chat-input', 'access-control')
-      .connect('access-control', 'onboarding', 'onboarding') // If user doesn't exist
-      .connect('access-control', 'echo-processor', 'exists') // If user exists
+      .connect('access-control', 'onboarding', 'onboarding') // If user incomplete → onboarding
+      .connect('access-control', 'command', 'command') // If command detected → command processor
+      .connect('access-control', 'ai-agent', 'default') // If user complete and not command → AI agent (replaces echo-processor)
+      // .connect('access-control', 'echo-processor', 'default') // Echo processor kept as fallback
       .connect('onboarding', 'unified-output', 'send_response') // Send onboarding messages
       .connect('onboarding', 'unified-output', 'completed') // After onboarding complete, send completion message
-      .connect('echo-processor', 'unified-output') // Existing users go through echo processor
+      .connect('command', 'unified-output', 'command_success') // Command handled successfully
+      .connect('command', 'unified-output', 'command_error') // Command error
+      .connect('ai-agent', 'unified-output') // AI Agent output
+      .connect('echo-processor', 'unified-output') // Echo processor output (kept for fallback)
       .connect('unified-output', 'telegram-output', 'telegram_output') // Route to Telegram output
       .connect('unified-output', 'web-chat-output', 'web_chat_output') // Route to Web Chat output
       .setStartNode('unified-input');

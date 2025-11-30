@@ -4,8 +4,9 @@ import {
   NodeExecutionContext,
   NodeExecutionResult,
 } from '../../types/workflow.types';
-import { FluctMessage, MessageSource } from '../../types/message.types';
+import { FluctMessage, MessageSource, MessageType } from '../../types/message.types';
 import { UsersService } from '../../../users/users.service';
+import { CommandsService } from '../../../common/services/commands.service';
 import { Platform } from '../../../users/entities/user-platform.entity';
 
 export interface AccessControlConfig {
@@ -21,6 +22,7 @@ export class AccessControlNode extends BaseNode {
     name: string,
     config: AccessControlConfig = {},
     private readonly usersService: UsersService,
+    private readonly commandsService: CommandsService,
   ) {
     super(id, name, 'access-control', config);
   }
@@ -45,7 +47,8 @@ export class AccessControlNode extends BaseNode {
   ): Promise<{ action: string; user?: any }> {
     this.logger.debug(`[exec] Context:\n${JSON.stringify(context, null, 2)}`);
     this.logger.debug(`[exec] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
-    const { platform, platformIdentifier } = prepResult as {
+    const { message, platform, platformIdentifier } = prepResult as {
+      message: FluctMessage;
       platform: Platform | null;
       platformIdentifier: string | null;
     };
@@ -57,6 +60,7 @@ export class AccessControlNode extends BaseNode {
       throw new Error('Invalid platform or user identifier');
     }
 
+    // First, check user status and onboarding requirements
     // Check if user exists
     const user = await this.usersService.findByPlatform(
       platform,
@@ -88,7 +92,7 @@ export class AccessControlNode extends BaseNode {
       };
     }
 
-    // User exists and has both email and phone - store in shared data and continue
+    // User exists and has complete profile - store in shared data
     context.sharedData['user'] = {
       id: user.id,
       email: user.email,
@@ -99,12 +103,34 @@ export class AccessControlNode extends BaseNode {
     context.sharedData['platform'] = platform;
     context.sharedData['platformIdentifier'] = platformIdentifier;
 
+    // Now check if message is a command (only for users with complete profiles)
+    if (message.content.type === MessageType.TEXT && message.content.text) {
+      const isCommand = this.commandsService.isCommand(message.content.text);
+      if (isCommand) {
+        const command = this.commandsService.extractCommand(message.content.text);
+        this.logger.debug(
+          `User ${user.id} with complete profile sent command: /${command}, routing to command processor`,
+        );
+        return {
+          action: 'command', // Route to command processor
+          user: {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            phoneNumber: user.phoneNumber,
+            emailVerified: user.emailVerified,
+          },
+        };
+      }
+    }
+
+    // User has complete profile and message is not a command - route to echo processor
     this.logger.debug(
-      `User ${user.id} found with complete profile (email: ${hasEmail}, phone: ${hasPhone}) for platform ${platform}:${platformIdentifier}`,
+      `User ${user.id} found with complete profile (email: ${hasEmail}, phone: ${hasPhone}) for platform ${platform}:${platformIdentifier}, routing to echo processor`,
     );
 
     return {
-      action: 'exists', // Route to normal workflow
+      action: 'default', // Route to echo processor (default flow)
       user: {
         id: user.id,
         email: user.email,
