@@ -2,15 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { NodeFactory } from '../../core/node-registry';
 import { AccessControlNode, AccessControlConfig } from '../processor/access-control.node';
 import { BaseNode } from '../../core/base-node';
-import { UsersService } from '../../../users/users.service';
-import { CommandsService } from '../../../common/services/commands.service';
+import { WorkflowNodeContextProvider } from '../../services/workflow-node-context.provider';
 
 @Injectable()
 export class AccessControlNodeFactory implements NodeFactory {
+  private readonly context: ReturnType<WorkflowNodeContextProvider['createContext']>;
+
   constructor(
-    private readonly usersService: UsersService,
-    private readonly commandsService: CommandsService,
-  ) {}
+    private readonly contextProvider: WorkflowNodeContextProvider,
+  ) {
+    this.context = this.contextProvider.createContext();
+  }
 
   getType(): string {
     return 'access-control';
@@ -33,8 +35,7 @@ export class AccessControlNodeFactory implements NodeFactory {
       id,
       name,
       config as AccessControlConfig,
-      this.usersService,
-      this.commandsService,
+      this.context,
     );
   }
 }

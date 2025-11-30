@@ -37,11 +37,9 @@ export class UnifiedInputNode extends BaseNode {
 
     const source = message.metadata.source;
 
-    // Store message in shared data for input nodes
-    context.sharedData.inputMessage = message;
-    context.sharedData.source = source;
-    context.sharedData.chatId = message.metadata.chatId;
-    context.sharedData.userId = message.metadata.userId;
+    // Store message in shared data for input nodes (mutable version)
+    // Note: source, chatId, userId are available via message.metadata.*
+    context.sharedData.message = message;
 
     return { message, source };
   }
@@ -75,8 +73,7 @@ export class UnifiedInputNode extends BaseNode {
     //this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
     const result = execResult as { source: MessageSource; action: string };
     
-    // Store source in shared data for input nodes
-    context.sharedData.source = result.source;
+    // Source is available via message.metadata.source, no need to store separately
 
     // Return action for routing to appropriate input node
     return result.action;

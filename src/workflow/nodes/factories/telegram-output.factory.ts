@@ -9,11 +9,17 @@ import {
   TelegramOutputNode,
   TelegramOutputConfig,
 } from '../output/telegram-output.node';
-import { TelegramService } from '../../sources/telegram/telegram.service';
+import { WorkflowNodeContextProvider } from '../../services/workflow-node-context.provider';
 
 @Injectable()
 export class TelegramOutputNodeFactory implements NodeFactory {
-  constructor(private readonly telegramService: TelegramService) {}
+  private readonly context: ReturnType<WorkflowNodeContextProvider['createContext']>;
+
+  constructor(
+    private readonly contextProvider: WorkflowNodeContextProvider,
+  ) {
+    this.context = this.contextProvider.createContext();
+  }
 
   getType(): string {
     return 'telegram-output';
@@ -36,7 +42,7 @@ export class TelegramOutputNodeFactory implements NodeFactory {
       id,
       name,
       config as TelegramOutputConfig,
-      this.telegramService,
+      this.context,
     );
   }
 }

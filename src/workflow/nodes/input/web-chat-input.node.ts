@@ -94,11 +94,9 @@ export class WebChatInputNode extends BaseNode {
     //this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
     const message = execResult as FluctMessage;
 
-    // Store in shared data for next nodes
-    context.sharedData.inputMessage = message;
-    context.sharedData.source = message.metadata.source;
-    context.sharedData.chatId = message.metadata.chatId;
-    context.sharedData.userId = message.metadata.userId;
+    // Store in shared data for next nodes (mutable version)
+    // Note: source, chatId, userId are available via message.metadata.*
+    context.sharedData.message = message;
 
     this.logger.debug(
       `Web Chat input node completed for message ${message.id}`,

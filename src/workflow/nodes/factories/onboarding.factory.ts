@@ -2,19 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { NodeFactory } from '../../core/node-registry';
 import { OnboardingNode, OnboardingConfig } from '../processor/onboarding.node';
 import { BaseNode } from '../../core/base-node';
-import { OnboardingStateService } from '../../../common/services/onboarding-state.service';
-import { EmailVerificationService } from '../../../common/services/email-verification.service';
-import { UsersService } from '../../../users/users.service';
-import { SubscriptionsService } from '../../../subscriptions/subscriptions.service';
+import { WorkflowNodeContextProvider } from '../../services/workflow-node-context.provider';
 
 @Injectable()
 export class OnboardingNodeFactory implements NodeFactory {
+  private readonly context: ReturnType<WorkflowNodeContextProvider['createContext']>;
+
   constructor(
-    private readonly onboardingStateService: OnboardingStateService,
-    private readonly emailVerificationService: EmailVerificationService,
-    private readonly usersService: UsersService,
-    private readonly subscriptionsService: SubscriptionsService,
-  ) {}
+    private readonly contextProvider: WorkflowNodeContextProvider,
+  ) {
+    this.context = this.contextProvider.createContext();
+  }
 
   getType(): string {
     return 'onboarding';
@@ -53,10 +51,7 @@ export class OnboardingNodeFactory implements NodeFactory {
       id,
       name,
       config as OnboardingConfig,
-      this.onboardingStateService,
-      this.emailVerificationService,
-      this.usersService,
-      this.subscriptionsService,
+      this.context,
     );
   }
 }

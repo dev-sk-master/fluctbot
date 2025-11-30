@@ -402,12 +402,22 @@ export type UniversalAgentConfig = {
   adapter?: any;
 };
 
+
+export type UniversalMessageContent = 
+  | string 
+  | Array<
+      | { type: 'text'; text: string } 
+      | { type: 'image_url'; image_url: { url: string } }
+      | { type: 'input_audio'; input_audio: { data: string; format: string } }
+      | { type: 'file'; file: { filename: string; file_data: string } } // OpenRouter expects file_data (snake_case) and data URL format
+    >;
+
 /**
  * UniversalMessage - Message format for agent communication
  */
 export interface UniversalMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: string;
+  content: UniversalMessageContent; // Supports string or multimodal array
   [key: string]: any;
 }
 

@@ -28,6 +28,8 @@ export type {
   // Tool parameter types
   ToolParams,
   InferToolParams,
+  // Message content types
+  UniversalMessageContent,
 } from "./types";
 
 // Core interfaces
@@ -36,11 +38,7 @@ export type { IFrameworkAdapter, IToolRegistry } from "./core/interfaces";
 // Adapter exports
 export {
   AdapterFactory,
-  LangChainAdapter,
-  LangGraphAdapter,
-  CrewAIAdapter,
   DeepAgentsAdapter,
-  OpenAIAgentsAdapter,
 } from "./adapters";
 
 // Base adapter for custom implementations

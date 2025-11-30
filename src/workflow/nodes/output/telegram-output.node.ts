@@ -13,7 +13,7 @@ import {
   MessageContent,
 } from '../../types/message.types';
 import { MessageResponse } from '../../types/message.types';
-import { TelegramService } from '../../sources/telegram/telegram.service';
+import { WorkflowNodeContext } from '../../services/workflow-node-context';
 
 export interface TelegramOutputConfig {
   botToken?: string; // Usually handled at service level
@@ -29,7 +29,7 @@ export class TelegramOutputNode extends BaseNode {
     id: string,
     name: string,
     config: TelegramOutputConfig = {},
-    private readonly telegramService?: TelegramService,
+    private readonly context: WorkflowNodeContext,
   ) {
     super(id, name, 'telegram-output', config);
   }
@@ -41,7 +41,7 @@ export class TelegramOutputNode extends BaseNode {
     context: NodeExecutionContext,
   ): Promise<MessageResponse> {
     //this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
-    const message = context.sharedData.inputMessage as FluctMessage;
+    const message = context.sharedData.message as FluctMessage;
     const processedContent = context.sharedData.processedContent as
       | MessageContent
       | undefined;
@@ -97,35 +97,28 @@ export class TelegramOutputNode extends BaseNode {
       `Sending message to Telegram chat ${response.chatId}`,
     );
 
-    // Use TelegramService to send message if available
-    if (this.telegramService) {
-      try {
-        const sentMessage = await this.telegramService.sendMessage(
-          response.chatId,
-          response.content,
-        );
-
-        if (sentMessage) {
-          this.logger.log(
-            `Successfully sent message to Telegram chat ${response.chatId}`,
-          );
-          // Update response with sent message ID
-          response.metadata = {
-            ...response.metadata,
-            sentMessageId: sentMessage.message_id,
-          };
-        }
-      } catch (error) {
-        this.logger.error(
-          `Failed to send message to Telegram: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        throw error;
-      }
-    } else {
-      // Fallback: log if service not available
-      this.logger.warn(
-        'TelegramService not available, message not sent',
+    // Use TelegramService to send message
+    try {
+      const sentMessage = await this.context.services.telegramService.sendMessage(
+        response.chatId,
+        response.content,
       );
+
+      if (sentMessage) {
+        this.logger.log(
+          `Successfully sent message to Telegram chat ${response.chatId}`,
+        );
+        // Update response with sent message ID
+        response.metadata = {
+          ...response.metadata,
+          sentMessageId: sentMessage.message_id,
+        };
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to send message to Telegram: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw error;
     }
 
     return response;

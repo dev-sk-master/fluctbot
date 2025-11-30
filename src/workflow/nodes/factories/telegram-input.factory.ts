@@ -6,9 +6,18 @@ import { Injectable } from '@nestjs/common';
 import { NodeFactory } from '../../core/node-registry';
 import { BaseNode } from '../../core/base-node';
 import { TelegramInputNode, TelegramInputConfig } from '../input/telegram-input.node';
+import { WorkflowNodeContextProvider } from '../../services/workflow-node-context.provider';
 
 @Injectable()
 export class TelegramInputNodeFactory implements NodeFactory {
+  private readonly context: ReturnType<WorkflowNodeContextProvider['createContext']>;
+
+  constructor(
+    private readonly contextProvider: WorkflowNodeContextProvider,
+  ) {
+    this.context = this.contextProvider.createContext();
+  }
+
   getType(): string {
     return 'telegram-input';
   }
@@ -26,7 +35,12 @@ export class TelegramInputNodeFactory implements NodeFactory {
     name: string,
     config: Record<string, unknown>,
   ): BaseNode {
-    return new TelegramInputNode(id, name, config as TelegramInputConfig);
+    return new TelegramInputNode(
+      id,
+      name,
+      config as TelegramInputConfig,
+      this.context,
+    );
   }
 }
 

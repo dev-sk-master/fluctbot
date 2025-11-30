@@ -1,16 +1,18 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { NodeFactory } from '../../core/node-registry';
 import { AIAgentNode, AIAgentConfig } from '../processor/ai-agent.node';
 import { BaseNode } from '../../core/base-node';
-import { AgentToolsService } from '../../services/agent-tools.service';
+import { WorkflowNodeContextProvider } from '../../services/workflow-node-context.provider';
 
 @Injectable()
 export class AIAgentNodeFactory implements NodeFactory {
+  private readonly context: ReturnType<WorkflowNodeContextProvider['createContext']>;
+
   constructor(
-    private readonly configService: ConfigService,
-    private readonly agentToolsService: AgentToolsService,
-  ) {}
+    private readonly contextProvider: WorkflowNodeContextProvider,
+  ) {
+    this.context = this.contextProvider.createContext();
+  }
 
   getType(): string {
     return 'ai-agent';
@@ -22,7 +24,7 @@ export class AIAgentNodeFactory implements NodeFactory {
 
   getDefaultConfig(): Record<string, unknown> {
     return {
-      framework: 'langchain',
+      framework: 'deepagents',
       modelProvider: 'openrouter',
       modelName: 'openai/gpt-4o-mini',
       temperature: 0.7,
@@ -39,8 +41,7 @@ export class AIAgentNodeFactory implements NodeFactory {
       id,
       name,
       config as AIAgentConfig,
-      this.configService,
-      this.agentToolsService,
+      this.context,
     );
   }
 }

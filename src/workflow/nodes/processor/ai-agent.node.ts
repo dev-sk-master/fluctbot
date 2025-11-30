@@ -4,20 +4,19 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { BaseNode } from '../../core/base-node';
 import { NodeExecutionContext } from '../../types/workflow.types';
 import { FluctMessage, MessageType, MessageContent } from '../../types/message.types';
-import { UniversalAgent, UniversalAgentConfig, UniversalTool, UniversalFramework } from '../../../universal-agent';
+import { UniversalAgent, UniversalAgentConfig, UniversalTool, UniversalFramework, UniversalMessageContent, UniversalAgentInvokeInput } from '../../../universal-agent';
 import { MemorySaver } from "@langchain/langgraph";
-import { AgentToolsService } from '../../services/agent-tools.service';
+import { WorkflowNodeContext } from '../../services/workflow-node-context';
 import { ChatOpenAI } from '@langchain/openai';
 import OpenAI from "openai";
 import { v4 as uuidv4 } from 'uuid';
 
 
 export interface AIAgentConfig {
-  framework?: 'langchain' | 'langgraph' | 'crewai' | 'deepagents' | 'openai-agents' | 'pocketflow' | 'custom';
+  framework?:  'deepagents';
   modelProvider?: 'openai' | 'openrouter' | 'anthropic' | 'custom';
   modelName?: string;
   apiKey?: string;
@@ -38,33 +37,254 @@ export class AIAgentNode extends BaseNode {
     id: string,
     name: string,
     config: AIAgentConfig = {},
-    private readonly configService: ConfigService,
-    private readonly agentToolsService: AgentToolsService,
+    private readonly context: WorkflowNodeContext,
   ) {
     super(id, name, 'ai-agent', config);
   }
 
   /**
    * Prepare input from context
+   * Supports multimodal inputs: text, image, audio, file (with captions)
    */
   protected async prep(
     context: NodeExecutionContext,
-  ): Promise<{ message: FluctMessage; user: any; userInput: string }> {
+  ): Promise<{ message: FluctMessage; user: any; userInput: UniversalMessageContent }> {
     //this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
-    const message = context.sharedData.inputMessage as FluctMessage;
+    const message = context.sharedData.message as FluctMessage;
     const user = context.sharedData.user as any;
 
     if (!message || !message.content) {
       throw new Error('No input message content found');
     }
 
-    if (message.content.type !== MessageType.TEXT || !message.content.text) {
-      throw new Error('AI Agent only supports text messages');
-    }
-
-    const userInput = message.content.text;
+    // Format multimodal input for LLM (OpenRouter format)
+    const userInput = await this.formatMultimodalInput(message.content, message.metadata);
 
     return { message, user, userInput };
+  }
+
+  /**
+   * Format multimodal message content for LLM input (OpenRouter format)
+   * Returns UniversalMessageContent: string for text, or array for multimodal
+   */
+  private async formatMultimodalInput(
+    content: MessageContent,
+    metadata: any,
+  ): Promise<UniversalMessageContent> {
+    switch (content.type) {
+      case MessageType.TEXT:
+        // Simple text message - return as string
+        return content.text || '';
+
+      case MessageType.IMAGE:
+        // Build multimodal array: [text (caption), image]
+        const imageContent: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = [];
+        
+        // Add caption as text if provided
+        if (content.text) {
+          imageContent.push({
+            type: 'text',
+            text: content.text,
+          });
+        }
+        
+        // Use pre-populated base64 data from input node
+        if (content.base64Data) {
+          const mimeType = content.mimeType || 'image/jpeg';
+          imageContent.push({
+            type: 'image_url',
+            image_url: {
+              url: `data:${mimeType};base64,${content.base64Data}`,
+            },
+          });
+        } else if (content.directUrl) {
+          // Fallback: use direct URL if base64 not available
+          imageContent.push({
+            type: 'image_url',
+            image_url: {
+              url: content.directUrl,
+            },
+          });
+        }
+        
+        return imageContent.length > 0 ? imageContent : [{ type: 'text', text: '[Image received]' }];
+
+      case MessageType.AUDIO:
+        // Build multimodal array: [text (caption), audio]
+        const audioContent: Array<{ type: 'text'; text: string } | { type: 'input_audio'; input_audio: { data: string; format: string } }> = [];
+        
+        // Add caption as text if provided
+        if (content.text) {
+          audioContent.push({
+            type: 'text',
+            text: content.text,
+          });
+        }
+        
+        // Use pre-populated base64 audio from input node
+        // Audio is converted to WAV format by input node for LLM compatibility
+        if (content.base64Audio) {
+          // Extract format extension from MIME type (e.g., 'audio/wav' -> 'wav')
+          // Default to 'wav' since input node converts all audio to WAV
+          let format = 'wav';
+          if (content.mimeType) {
+            const mimeParts = content.mimeType.split('/');
+            if (mimeParts.length > 1) {
+              format = mimeParts[1]; // Extract 'wav' from 'audio/wav'
+            }
+          }
+         
+          audioContent.push({
+            type: 'input_audio',
+            input_audio: {
+              data: content.base64Audio,
+              format: format,
+            },
+          });
+        }
+        
+        return audioContent.length > 0 ? audioContent : [{ type: 'text', text: '[Audio received]' }];
+
+      case MessageType.DOCUMENT:
+      case MessageType.FILE:
+        // Build multimodal array: [text (caption), file]
+        // Only PDF files are supported for LLM processing
+        const fileContent: Array<{ type: 'text'; text: string } | { type: 'file'; file: { filename: string; file_data: string } }> = [];
+        
+        // Add caption as text if provided
+        if (content.text) {
+          fileContent.push({
+            type: 'text',
+            text: content.text,
+          });
+        }
+        
+        // Use pre-populated base64 file data from input node
+        // Only process PDF files (OpenRouter requirement)
+        if (content.base64Data) {
+          const mimeType = content.mimeType || 'application/octet-stream';
+          
+          // Verify it's a PDF file
+          if (mimeType !== 'application/pdf') {
+            this.logger.warn(
+              `Unsupported file type: ${mimeType}. Only PDF files are supported. Skipping file.`,
+            );
+            // Fallback to text description
+            fileContent.push({
+              type: 'text',
+              text: `[File received - unsupported type: ${mimeType}. Only PDF files are supported.]`,
+            });
+          } else {
+            // Ensure filename has .pdf extension
+            let filename = content.fileName || 'document.pdf';
+            if (!filename.toLowerCase().endsWith('.pdf')) {
+              filename = filename.endsWith('.') ? filename + 'pdf' : filename + '.pdf';
+            }
+            
+            // Construct data URL with PDF MIME type (OpenRouter format)
+            // OpenRouter expects file_data (snake_case) with data URL format
+            const dataUrl = `data:application/pdf;base64,${content.base64Data}`;
+            
+            fileContent.push({
+              type: 'file',
+              file: {
+                filename: filename,
+                file_data: dataUrl, // Use snake_case as required by OpenRouter API
+              } as any, // Type assertion needed for snake_case property
+            });
+            
+            this.logger.debug(`Added PDF file: ${filename}, data length: ${content.base64Data.length}`);
+          }
+        }
+        
+        return fileContent.length > 0 ? fileContent : [{ type: 'text', text: `[File received: ${content.type === MessageType.DOCUMENT ? 'Document' : 'File'}]` }];
+
+      case MessageType.VIDEO:
+        // For video, treat similar to image (some models support video)
+        // For now, use image_url format or fallback to text description
+        const videoContent: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = [];
+        
+        if (content.text) {
+          videoContent.push({
+            type: 'text',
+            text: content.text,
+          });
+        }
+        
+        // Use pre-populated base64 thumbnail from input node
+        // Note: OpenRouter may not support video directly, so we'll use thumbnail
+        if (content.base64Thumbnail) {
+          videoContent.push({
+            type: 'image_url',
+            image_url: {
+              url: `data:image/jpeg;base64,${content.base64Thumbnail}`,
+            },
+          });
+        }
+        
+        return videoContent.length > 0 ? videoContent : [{ type: 'text', text: '[Video received]' }];
+
+      default:
+        return '[Unsupported message type]';
+    }
+  }
+
+
+  /**
+   * Format file size in human-readable format
+   */
+  private formatFileSize(bytes: number): string {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  }
+
+  /**
+   * Format agent input for logging (shows text or content type, not full base64 data)
+   */
+  private formatInputForLogging(input: UniversalAgentInvokeInput): string {
+    if (typeof input === 'string') {
+      return `[TEXT] ${input.substring(0, 200)}${input.length > 200 ? '...' : ''}`;
+    }
+
+    if (Array.isArray(input)) {
+      const parts: string[] = [];
+      for (const msg of input) {
+        if (typeof msg === 'string') {
+          parts.push(`[TEXT] ${msg.substring(0, 200)}${msg.length > 200 ? '...' : ''}`);
+        } else if (msg && typeof msg === 'object' && 'role' in msg && 'content' in msg) {
+          const role = msg.role;
+          const content = msg.content;
+
+          if (typeof content === 'string') {
+            parts.push(`[${role.toUpperCase()}] [TEXT] ${content.substring(0, 200)}${content.length > 200 ? '...' : ''}`);
+          } else if (Array.isArray(content)) {
+            const contentParts: string[] = [];
+            for (const part of content) {
+              if (part.type === 'text') {
+                contentParts.push(`[TEXT] ${(part as any).text?.substring(0, 100) || ''}${(part as any).text?.length > 100 ? '...' : ''}`);
+              } else if (part.type === 'image_url') {
+                contentParts.push(`[IMAGE]`);
+              } else if (part.type === 'input_audio') {
+                contentParts.push(`[AUDIO]`);
+              } else if (part.type === 'file') {
+                contentParts.push(`[FILE]`);
+              } else {
+                contentParts.push(`[${part.type.toUpperCase()}]`);
+              }
+            }
+            parts.push(`[${role.toUpperCase()}] ${contentParts.join(', ')}`);
+          } else {
+            parts.push(`[${role.toUpperCase()}] [UNKNOWN]`);
+          }
+        }
+      }
+      return parts.join(' | ');
+    }
+
+    return '[UNKNOWN INPUT FORMAT]';
   }
 
   /**
@@ -76,7 +296,7 @@ export class AIAgentNode extends BaseNode {
   ): Promise<MessageContent> {
     //this.logger.debug(`[exec] Context:\n${JSON.stringify(context, null, 2)}`);
     //this.logger.debug(`[exec] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
-    const { userInput, user } = prepResult as { message: FluctMessage; user: any; userInput: string };
+    const { userInput, user } = prepResult as { message: FluctMessage; user: any; userInput: UniversalMessageContent };
     const config = this.config as AIAgentConfig;
 
     try {
@@ -89,9 +309,23 @@ export class AIAgentNode extends BaseNode {
         throw new Error('Agent not initialized');
       }
 
+      // Format input for agent
+      // If userInput is string, pass directly; if array (multimodal), wrap in message format
+      let agentInput: UniversalAgentInvokeInput;
+      if (typeof userInput === 'string') {
+        agentInput = userInput;
+      } else {
+        // Multimodal input - wrap in message format for OpenRouter
+        agentInput = [{
+          role: 'user' as const,
+          content: userInput,
+        }];
+      }
+
       // Invoke agent with user input
-      this.logger.debug(`Invoking AI agent with input: ${userInput}`);
-      const result = await this.agent.invoke(userInput, {
+      const inputSummary = this.formatInputForLogging(agentInput);
+      this.logger.debug(`Invoking AI agent with input: ${inputSummary}`);
+      const result = await this.agent.invoke(agentInput, {
         framework: {
           deepagents: {
             configurable: {
@@ -205,7 +439,7 @@ export class AIAgentNode extends BaseNode {
    * Get tools with user context bound
    */
   private getToolsWithContext(user: any): UniversalTool[] {
-    const tools = this.agentToolsService.getTools();
+    const tools = this.context.services.agentToolsService.getTools();
 
     // Wrap tools to inject user context
     return tools.map((tool) => ({
@@ -230,7 +464,7 @@ export class AIAgentNode extends BaseNode {
   private createModel(config: AIAgentConfig): any {
     const framework = (config.framework || 'langchain') as UniversalFramework;
     const modelName = config.modelName || 'openai/gpt-4o-mini';
-    const apiKey = config.apiKey || this.configService.get<string>('OPENROUTER_API_KEY') || this.configService.get<string>('OPENAI_API_KEY');
+    const apiKey = config.apiKey || this.context.config.configService.get<string>('OPENROUTER_API_KEY') || this.context.config.configService.get<string>('OPENAI_API_KEY');
 
     if (!apiKey) {
       throw new Error(`API key not found. Please set OPENROUTER_API_KEY or OPENAI_API_KEY environment variable.`);
@@ -245,7 +479,7 @@ export class AIAgentNode extends BaseNode {
         configuration: {
           baseURL: 'https://openrouter.ai/api/v1',
           defaultHeaders: {
-            'HTTP-Referer': this.configService.get<string>('OPENROUTER_HTTP_REFERER') || 'https://github.com/fluct/fluctbot',
+            'HTTP-Referer': this.context.config.configService.get<string>('OPENROUTER_HTTP_REFERER') || 'https://github.com/fluct/fluctbot',
             'X-Title': 'FluctBot',
           },
         },

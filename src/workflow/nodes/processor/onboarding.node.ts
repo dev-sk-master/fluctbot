@@ -5,10 +5,7 @@ import {
   NodeExecutionResult,
 } from '../../types/workflow.types';
 import { FluctMessage, MessageType } from '../../types/message.types';
-import { OnboardingStateService } from '../../../common/services/onboarding-state.service';
-import { EmailVerificationService } from '../../../common/services/email-verification.service';
-import { UsersService } from '../../../users/users.service';
-import { SubscriptionsService } from '../../../subscriptions/subscriptions.service';
+import { WorkflowNodeContext } from '../../services/workflow-node-context';
 import { Platform } from '../../../users/entities/user-platform.entity';
 
 export interface OnboardingConfig {
@@ -33,10 +30,7 @@ export class OnboardingNode extends BaseNode {
     id: string,
     name: string,
     config: OnboardingConfig = {},
-    private readonly onboardingStateService: OnboardingStateService,
-    private readonly emailVerificationService: EmailVerificationService,
-    private readonly usersService: UsersService,
-    private readonly subscriptionsService: SubscriptionsService,
+    private readonly context: WorkflowNodeContext,
   ) {
     super(id, name, 'onboarding', config);
   }
@@ -65,7 +59,8 @@ export class OnboardingNode extends BaseNode {
     context: NodeExecutionContext,
   ): Promise<{ message: FluctMessage; state: any; onboardingUser: any }> {
     //this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
-    const message = context.message as FluctMessage;
+    // Get message from sharedData (set by input nodes)
+    const message = context.sharedData.message as FluctMessage;
     const metadata = message.metadata;
 
     // Get or create onboarding state
@@ -77,20 +72,20 @@ export class OnboardingNode extends BaseNode {
     }
 
     // Check if user already exists
-    let onboardingUser = await this.usersService.findByPlatform(
+    let onboardingUser = await this.context.services.usersService.findByPlatform(
       platform,
       platformIdentifier,
     );
 
     // Check if onboarding already started
-    let state = this.onboardingStateService.getState(
+    let state = this.context.services.onboardingStateService.getState(
       platform,
       platformIdentifier,
     );
 
     // If no state, initialize onboarding based on what's missing
     if (!state) {
-      state = this.onboardingStateService.startOnboarding(
+      state = this.context.services.onboardingStateService.startOnboarding(
         platform,
         platformIdentifier,
       );
@@ -229,7 +224,7 @@ export class OnboardingNode extends BaseNode {
       context.sharedData['user'] = result.user;
       // Clear onboarding state
       const { state } = prepResult as { state: any };
-      this.onboardingStateService.completeOnboarding(
+      this.context.services.onboardingStateService.completeOnboarding(
         state.platform,
         state.platformIdentifier,
       );
@@ -262,7 +257,7 @@ export class OnboardingNode extends BaseNode {
         `User ${onboardingUser.id} already has verified email, skipping to phone collection`,
       );
       // Move directly to phone collection
-      this.onboardingStateService.updateState(platform, platformIdentifier, {
+      this.context.services.onboardingStateService.updateState(platform, platformIdentifier, {
         email: onboardingUser.email,
         verified: true,
         step: 'phone',
@@ -278,7 +273,7 @@ export class OnboardingNode extends BaseNode {
     // Check if email already collected in state
     if (state.email && state.emailVerified) {
       // Email already verified, move to phone
-      this.onboardingStateService.updateState(platform, platformIdentifier, {
+      this.context.services.onboardingStateService.updateState(platform, platformIdentifier, {
         step: 'phone',
       });
       const phonePrompt =
@@ -291,7 +286,7 @@ export class OnboardingNode extends BaseNode {
 
     if (state.email && !state.emailVerified) {
       // Email collected but not verified, move to verification
-      this.onboardingStateService.updateState(platform, platformIdentifier, {
+      this.context.services.onboardingStateService.updateState(platform, platformIdentifier, {
         step: 'verify_email',
       });
       return { action: 'verify_email' };
@@ -300,7 +295,7 @@ export class OnboardingNode extends BaseNode {
     // If existing user has email but not verified, move to verification
     if (onboardingUser?.email && !onboardingUser?.emailVerified && !state.email) {
       // Populate state with existing email and move to verification
-      this.onboardingStateService.updateState(platform, platformIdentifier, {
+      this.context.services.onboardingStateService.updateState(platform, platformIdentifier, {
         email: onboardingUser.email,
         step: 'verify_email',
       });
@@ -314,7 +309,7 @@ export class OnboardingNode extends BaseNode {
       const emailPrompt = config.promptEmailMessage || defaultConfig.promptEmailMessage;
       const combinedMessage = `${welcomeMsg}\n\n${emailPrompt}`;
       
-      this.onboardingStateService.updateState(platform, platformIdentifier, {
+      this.context.services.onboardingStateService.updateState(platform, platformIdentifier, {
         welcomeSent: true,
       });
       
@@ -330,9 +325,9 @@ export class OnboardingNode extends BaseNode {
 
       if (this.isValidEmail(email)) {
         // Store email, send verification code, and move to verification step
-        await this.emailVerificationService.sendVerificationCode(email);
+        await this.context.services.emailVerificationService.sendVerificationCode(email);
 
-        this.onboardingStateService.updateState(platform, platformIdentifier, {
+        this.context.services.onboardingStateService.updateState(platform, platformIdentifier, {
           email,
           codeSent: true,
           step: 'verify_email',
@@ -378,7 +373,7 @@ export class OnboardingNode extends BaseNode {
       // Email already verified - check if user exists by email (ONCE)
       let linkedUser = onboardingUser;
       if (state.email) {
-        const userByEmail = await this.usersService.findByEmail(state.email);
+        const userByEmail = await this.context.services.usersService.findByEmail(state.email);
         if (userByEmail) {
           this.logger.debug(
             `✅ User found with verified email ${state.email}: ${userByEmail.id}. Linking to existing user.`,
@@ -393,7 +388,7 @@ export class OnboardingNode extends BaseNode {
         this.logger.debug(
           `Email verified and phone already exists, proceeding to link/update user`,
         );
-        const updatedState = this.onboardingStateService.updateState(
+        const updatedState = this.context.services.onboardingStateService.updateState(
           platform,
           platformIdentifier,
           {
@@ -411,7 +406,7 @@ export class OnboardingNode extends BaseNode {
         );
       } else {
         // Move to phone collection
-        this.onboardingStateService.updateState(platform, platformIdentifier, {
+        this.context.services.onboardingStateService.updateState(platform, platformIdentifier, {
           step: 'phone',
         });
         const phonePrompt =
@@ -426,10 +421,10 @@ export class OnboardingNode extends BaseNode {
     // Send code if not sent yet
     if (!state.codeSent) {
       try {
-        const code = await this.emailVerificationService.sendVerificationCode(
+        const code = await this.context.services.emailVerificationService.sendVerificationCode(
           state.email,
         );
-        this.onboardingStateService.updateState(platform, platformIdentifier, {
+        this.context.services.onboardingStateService.updateState(platform, platformIdentifier, {
           codeSent: true,
         });
 
@@ -450,14 +445,14 @@ export class OnboardingNode extends BaseNode {
 
       if (code.length === (config.codeLength || 6)) {
         // Verify the code
-        const isValid = await this.emailVerificationService.verifyCode(
+        const isValid = await this.context.services.emailVerificationService.verifyCode(
           state.email,
           code,
         );
 
         if (isValid) {
           // Email verified - check if user exists with this email (ONCE)
-          const userByEmail = await this.usersService.findByEmail(state.email);
+          const userByEmail = await this.context.services.usersService.findByEmail(state.email);
           
           // Use the user found by email, or fall back to onboardingUser from platform
           const linkedUser = userByEmail || onboardingUser;
@@ -471,7 +466,7 @@ export class OnboardingNode extends BaseNode {
           }
 
           // Update state with verified email
-          this.onboardingStateService.updateState(platform, platformIdentifier, {
+          this.context.services.onboardingStateService.updateState(platform, platformIdentifier, {
             verified: true,
             email: state.email,
           });
@@ -484,7 +479,7 @@ export class OnboardingNode extends BaseNode {
             this.logger.debug(
               `Phone already exists, proceeding to link/update user`,
             );
-            const updatedState = this.onboardingStateService.updateState(
+            const updatedState = this.context.services.onboardingStateService.updateState(
               platform,
               platformIdentifier,
               {
@@ -502,7 +497,7 @@ export class OnboardingNode extends BaseNode {
             );
           } else {
             // Move to phone collection
-            this.onboardingStateService.updateState(platform, platformIdentifier, {
+            this.context.services.onboardingStateService.updateState(platform, platformIdentifier, {
               step: 'phone',
             });
 
@@ -550,7 +545,7 @@ export class OnboardingNode extends BaseNode {
     // Check if user exists by email (if email was verified) - ONCE
     let linkedUser = onboardingUser;
     if (state.email && state.verified) {
-      const userByEmail = await this.usersService.findByEmail(state.email);
+      const userByEmail = await this.context.services.usersService.findByEmail(state.email);
       if (userByEmail) {
         this.logger.debug(
           `✅ User found with verified email ${state.email}: ${userByEmail.id}. Linking to existing user.`,
@@ -565,7 +560,7 @@ export class OnboardingNode extends BaseNode {
         `User ${linkedUser.id} already has phone (${linkedUser.phoneNumber}), proceeding to link/update user`,
       );
       // Update state with existing phone
-      const updatedState = this.onboardingStateService.updateState(
+      const updatedState = this.context.services.onboardingStateService.updateState(
         platform,
         platformIdentifier,
         {
@@ -605,7 +600,7 @@ export class OnboardingNode extends BaseNode {
       if (this.isValidPhone(phone)) {
         // Store phone and immediately create user
         const updatedState =
-          this.onboardingStateService.updateState(
+          this.context.services.onboardingStateService.updateState(
             platform,
             platformIdentifier,
             {
@@ -620,7 +615,7 @@ export class OnboardingNode extends BaseNode {
         // Check if user exists by email (if email was verified) - ONCE
         let linkedUser = onboardingUser;
         if (state.email && state.verified) {
-          const userByEmail = await this.usersService.findByEmail(state.email);
+          const userByEmail = await this.context.services.usersService.findByEmail(state.email);
           if (userByEmail) {
             this.logger.debug(
               `✅ User found with verified email ${state.email}: ${userByEmail.id}. Linking to existing user.`,
@@ -666,7 +661,7 @@ export class OnboardingNode extends BaseNode {
 
       // If no user provided, check by platform (fallback)
       if (!user) {
-        user = await this.usersService.findByPlatform(
+        user = await this.context.services.usersService.findByPlatform(
           platform,
           platformIdentifier,
         );
@@ -674,7 +669,7 @@ export class OnboardingNode extends BaseNode {
 
       // Final fallback: check by email if verified (shouldn't happen if flow is correct)
       if (!user && state.email && state.verified) {
-        user = await this.usersService.findByEmail(state.email);
+        user = await this.context.services.usersService.findByEmail(state.email);
         if (user) {
           this.logger.debug(
             `Found existing user by email ${state.email}: ${user.id}`,
@@ -703,13 +698,13 @@ export class OnboardingNode extends BaseNode {
         }
 
         if (Object.keys(updateData).length > 0) {
-          user = await this.usersService.update(user.id, updateData);
+          user = await this.context.services.usersService.update(user.id, updateData);
           this.logger.debug(`User ${user.id} updated with missing fields`);
         }
 
         // Ensure platform is linked (in case it wasn't)
         try {
-          await this.usersService.linkPlatform(user.id, {
+          await this.context.services.usersService.linkPlatform(user.id, {
             platform: platform,
             platformIdentifier: platformIdentifier,
           });
@@ -724,21 +719,21 @@ export class OnboardingNode extends BaseNode {
         }
       } else {
         // User doesn't exist - create new user
-        user = await this.usersService.create({
+        user = await this.context.services.usersService.create({
           email: state.email,
           phoneNumber: state.phoneNumber,
           name: 'User', // Default name, can be updated later
         });
 
         // Update email verified status
-        await this.usersService.update(user.id, {
+        await this.context.services.usersService.update(user.id, {
           emailVerified: true,
         });
 
         this.logger.debug(`User created: ${user.id}`);
 
         // Link platform
-        await this.usersService.linkPlatform(user.id, {
+        await this.context.services.usersService.linkPlatform(user.id, {
           platform: platform,
           platformIdentifier: platformIdentifier,
         });
@@ -751,7 +746,7 @@ export class OnboardingNode extends BaseNode {
       // Send welcome email after onboarding completion
       if (user.email) {
         try {
-          await this.emailVerificationService.sendWelcomeEmail(
+          await this.context.services.emailVerificationService.sendWelcomeEmail(
             user.email,
             user.name,
           );
@@ -769,21 +764,21 @@ export class OnboardingNode extends BaseNode {
       let subscriptionCreated = false;
       try {
         const hasUsedFreeTrial =
-          await this.subscriptionsService.hasUsedFreeTrial(user.id);
+          await this.context.services.subscriptionsService.hasUsedFreeTrial(user.id);
 
         if (hasUsedFreeTrial) {
           this.logger.debug(
             `User ${user.id} has already used their free trial, skipping subscription creation`,
           );
         } else {
-          await this.subscriptionsService.createFreeTierSubscription(user.id);
+          await this.context.services.subscriptionsService.createFreeTierSubscription(user.id);
           subscriptionCreated = true;
           this.logger.debug(
             `Created free tier subscription for user ${user.id} after onboarding completion (first time)`,
           );
 
           // Get free tier plan for completion message
-          freePlan = await this.subscriptionsService.getFreeTierPlan();
+          freePlan = await this.context.services.subscriptionsService.getFreeTierPlan();
         }
       } catch (error) {
         // Log error but don't fail onboarding

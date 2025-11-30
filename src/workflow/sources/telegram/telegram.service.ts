@@ -250,6 +250,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         duration: msg.audio.duration,
         mimeType: msg.audio.mime_type,
         fileSize: msg.audio.file_size,
+        text: msg.caption || undefined, // Caption stored in text field
       };
     } else if (msg.document) {
       content = {
@@ -258,6 +259,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         fileName: msg.document.file_name,
         mimeType: msg.document.mime_type,
         fileSize: msg.document.file_size,
+        text: msg.caption || undefined, // Caption stored in text field
       };
     } else if (msg.photo && msg.photo.length > 0) {
       const photo = msg.photo[msg.photo.length - 1]; // Get largest
@@ -265,6 +267,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         type: MessageType.IMAGE,
         fileUrl: photo.file_id,
         fileSize: photo.file_size,
+        text: msg.caption || undefined, // Caption stored in text field
       };
     } else if (msg.video) {
       content = {
@@ -273,6 +276,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         duration: msg.video.duration,
         mimeType: msg.video.mime_type,
         fileSize: msg.video.file_size,
+        text: msg.caption || undefined, // Caption stored in text field
       };
     } else if (msg.voice) {
       content = {
@@ -281,6 +285,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         duration: msg.voice.duration,
         mimeType: msg.voice.mime_type,
         fileSize: msg.voice.file_size,
+        // Voice messages typically don't have captions
       };
     } else {
       // Unknown type, default to text
@@ -423,6 +428,69 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       );
       throw error;
     }
+  }
+
+  /**
+   * Get file URL from Telegram file_id
+   * Returns the direct download URL for the file
+   */
+  async getFileUrl(fileId: string): Promise<string | null> {
+    if (!this.bot) {
+      this.logger.error('Bot not initialized');
+      return null;
+    }
+
+    try {
+      const fileLink = await this.bot.getFileLink(fileId);
+      return fileLink.toString();
+    } catch (error) {
+      this.logger.error(
+        `Error getting file URL: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Download file from Telegram as Buffer
+   * Returns Buffer or null if download fails
+   */
+  async downloadFileAsBuffer(fileId: string): Promise<Buffer | null> {
+    if (!this.bot) {
+      this.logger.error('Bot not initialized');
+      return null;
+    }
+
+    try {
+      const fileStream = this.bot.getFileStream(fileId);
+      const chunks: Buffer[] = [];
+      
+      return new Promise((resolve, reject) => {
+        fileStream.on('data', (chunk: Buffer) => chunks.push(chunk));
+        fileStream.on('end', () => {
+          const buffer = Buffer.concat(chunks);
+          resolve(buffer);
+        });
+        fileStream.on('error', (error) => {
+          this.logger.error(`Error downloading file: ${error.message}`);
+          reject(error);
+        });
+      });
+    } catch (error) {
+      this.logger.error(
+        `Error downloading file: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Download file from Telegram and convert to base64
+   * Returns base64 string or null if download fails
+   */
+  async downloadFileAsBase64(fileId: string): Promise<string | null> {
+    const buffer = await this.downloadFileAsBuffer(fileId);
+    return buffer ? buffer.toString('base64') : null;
   }
 
   /**

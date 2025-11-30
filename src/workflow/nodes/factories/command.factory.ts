@@ -2,22 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { NodeFactory } from '../../core/node-registry';
 import { CommandNode, CommandConfig } from '../processor/command.node';
 import { BaseNode } from '../../core/base-node';
-import { CommandsService } from '../../../common/services/commands.service';
-import { UsersService } from '../../../users/users.service';
-import { SubscriptionsService } from '../../../subscriptions/subscriptions.service';
-import { FleetsService } from '../../../fleets/fleets.service';
+import { WorkflowNodeContextProvider } from '../../services/workflow-node-context.provider';
 
 @Injectable()
 export class CommandNodeFactory implements NodeFactory {
+  private readonly context: ReturnType<WorkflowNodeContextProvider['createContext']>;
+
   constructor(
-    private readonly commandsService: CommandsService,
-    private readonly usersService: UsersService,
-    private readonly subscriptionsService: SubscriptionsService,
-    private readonly fleetsService: FleetsService,
-    // TODO: Add these services when they are created
-    // private readonly remindersService?: RemindersService,
-    // private readonly userCreditsUsageService?: UserCreditsUsageService,
-  ) {}
+    private readonly contextProvider: WorkflowNodeContextProvider,
+  ) {
+    this.context = this.contextProvider.createContext();
+  }
 
   getType(): string {
     return 'command';
@@ -40,13 +35,7 @@ export class CommandNodeFactory implements NodeFactory {
       id,
       name,
       config as CommandConfig,
-      this.commandsService,
-      this.usersService,
-      this.subscriptionsService,
-      this.fleetsService,
-      // TODO: Pass these services when available
-      // this.remindersService,
-      // this.userCreditsUsageService,
+      this.context,
     );
   }
 }

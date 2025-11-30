@@ -24,9 +24,11 @@ import { UsersModule } from '../users/users.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { CommonModule } from '../common/common.module';
 import { FleetsModule } from '../fleets/fleets.module';
+import { RemindersModule } from '../reminders/reminders.module';
 import { AgentToolsService } from './services/agent-tools.service';
 import { WebSearchToolsRegistry } from './services/tool-registries/web-search-tools.registry';
 import { DatalisticToolsRegistry } from './services/tool-registries/datalistic-tools.registry';
+import { WorkflowNodeContextProvider } from './services/workflow-node-context.provider';
 import { forwardRef } from '@nestjs/common';
 
 @Module({
@@ -36,6 +38,7 @@ import { forwardRef } from '@nestjs/common';
     SubscriptionsModule,
     CommonModule,
     FleetsModule,
+    RemindersModule,
   ],
   providers: [
     WorkflowEngine,
@@ -44,6 +47,7 @@ import { forwardRef } from '@nestjs/common';
     WebSearchToolsRegistry,
     DatalisticToolsRegistry,
     AgentToolsService,
+    WorkflowNodeContextProvider,
     TelegramInputNodeFactory,
     TelegramOutputNodeFactory,
     EchoProcessorNodeFactory,
@@ -162,7 +166,7 @@ export class WorkflowModule implements OnModuleInit {
       config: {
         framework: 'deepagents',
         modelProvider: 'openrouter',
-        modelName: 'openai/gpt-4o-mini',
+        modelName: 'google/gemini-2.5-flash',
         temperature: 0.7,
         maxTokens: 2000,
       },

@@ -5,10 +5,7 @@ import {
   NodeExecutionResult,
 } from '../../types/workflow.types';
 import { FluctMessage, MessageType, MessageContent } from '../../types/message.types';
-import { CommandsService } from '../../../common/services/commands.service';
-import { UsersService } from '../../../users/users.service';
-import { SubscriptionsService } from '../../../subscriptions/subscriptions.service';
-import { FleetsService } from '../../../fleets/fleets.service';
+import { WorkflowNodeContext } from '../../services/workflow-node-context';
 import { Platform } from '../../../users/entities/user-platform.entity';
 
 export interface CommandConfig {
@@ -29,22 +26,17 @@ export class CommandNode extends BaseNode {
     id: string,
     name: string,
     config: CommandConfig = {},
-    private readonly commandsService: CommandsService,
-    private readonly usersService: UsersService,
-    private readonly subscriptionsService: SubscriptionsService,
-    private readonly fleetsService: FleetsService,
-    // TODO: Add these services when they are created
-    // private readonly remindersService?: RemindersService,
-    // private readonly userCreditsUsageService?: UserCreditsUsageService,
+    private readonly context: WorkflowNodeContext,
   ) {
     super(id, name, 'command', config);
   }
 
   protected async prep(
     context: NodeExecutionContext,
-  ): Promise<{ message: FluctMessage; command: string | null; args: string }> {
+  ): Promise<{ command: string | null; args: string }> {
     //this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
-    const message = context.message as FluctMessage;
+    // Get message from sharedData (set by input nodes)
+    const message = context.sharedData.message as FluctMessage;
 
     // Extract command and args
     let command: string | null = null;
@@ -52,14 +44,14 @@ export class CommandNode extends BaseNode {
 
     if (message.content.type === MessageType.TEXT && message.content.text) {
       const text = message.content.text.trim();
-      if (this.commandsService.isCommand(text)) {
-        command = this.commandsService.extractCommand(text);
-        args = this.commandsService.extractCommandArgs(text);
+      if (this.context.services.commandsService.isCommand(text)) {
+        command = this.context.services.commandsService.extractCommand(text);
+        args = this.context.services.commandsService.extractCommandArgs(text);
         this.logger.debug(`Command detected: /${command}, args: "${args}"`);
       }
     }
 
-    return { message, command, args };
+    return { command, args };
   }
 
   protected async exec(
@@ -69,8 +61,9 @@ export class CommandNode extends BaseNode {
     //this.logger.debug(`[exec] Context:\n${JSON.stringify(context, null, 2)}`);
     //this.logger.debug(`[exec] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
     
-    const { message, command, args } = prepResult as {
-      message: FluctMessage;
+    // Get message from sharedData (set by input nodes)
+    const message = context.sharedData.message as FluctMessage;
+    const { command, args } = prepResult as {
       command: string | null;
       args: string;
     };
@@ -202,7 +195,7 @@ export class CommandNode extends BaseNode {
   // ==================== Command Handlers ====================
 
   private async handleHelpCommand(): Promise<CommandResult> {
-    const helpMessage = this.commandsService.getHelpMessage();
+    const helpMessage = this.context.services.commandsService.getHelpMessage();
     return {
       success: true,
       message: helpMessage,
@@ -213,7 +206,7 @@ export class CommandNode extends BaseNode {
     try {
       // User is guaranteed to exist by access-control
       // Get subscription details
-      const subscription = await this.subscriptionsService.getUserActiveSubscription(user.id);
+      const subscription = await this.context.services.subscriptionsService.getUserActiveSubscription(user.id);
 
       if (!subscription) {
         return {
@@ -282,7 +275,7 @@ export class CommandNode extends BaseNode {
         };
       }
 
-      const fleet = await this.fleetsService.createFleet({
+      const fleet = await this.context.services.fleetsService.createFleet({
         userId: user.id,
         name: fleetName.trim(),
         description: '',
@@ -304,7 +297,7 @@ export class CommandNode extends BaseNode {
   private async handleFleetListCommand(user: any): Promise<CommandResult> {
     try {
       // User is guaranteed to exist by access-control
-      const fleets = await this.fleetsService.getUserFleets(user.id);
+      const fleets = await this.context.services.fleetsService.getUserFleets(user.id);
 
       if (fleets.length === 0) {
         return {
@@ -318,7 +311,7 @@ export class CommandNode extends BaseNode {
       // Fetch vessel counts for each fleet
       for (const [index, fleet] of fleets.entries()) {
         const createdDate = new Date(fleet.createdAt).toLocaleDateString();
-        const vessels = await this.fleetsService.getFleetVessels(fleet.id, user.id);
+        const vessels = await this.context.services.fleetsService.getFleetVessels(fleet.id, user.id);
         const vesselCount = vessels.length;
 
         message += `${index + 1}. <b>${fleet.name}</b> (${vesselCount} vessel${vesselCount !== 1 ? 's' : ''})\n`;
@@ -363,7 +356,7 @@ export class CommandNode extends BaseNode {
         };
       }
 
-      const fleets = await this.fleetsService.getUserFleets(user.id);
+      const fleets = await this.context.services.fleetsService.getUserFleets(user.id);
       if (fleets.length === 0) {
         return {
           success: false,
@@ -379,7 +372,7 @@ export class CommandNode extends BaseNode {
       }
 
       const fleetToRename = fleets[listIndex - 1];
-      await this.fleetsService.renameFleet(fleetToRename.id, newName, user.id);
+      await this.context.services.fleetsService.renameFleet(fleetToRename.id, newName, user.id);
 
       return {
         success: true,
@@ -405,7 +398,7 @@ export class CommandNode extends BaseNode {
         };
       }
 
-      const fleets = await this.fleetsService.getUserFleets(user.id);
+      const fleets = await this.context.services.fleetsService.getUserFleets(user.id);
       if (fleets.length === 0) {
         return {
           success: false,
@@ -421,7 +414,7 @@ export class CommandNode extends BaseNode {
       }
 
       const fleetToDelete = fleets[listIndex - 1];
-      await this.fleetsService.deleteFleet(fleetToDelete.id, user.id);
+      await this.context.services.fleetsService.deleteFleet(fleetToDelete.id, user.id);
 
       return {
         success: true,
@@ -457,7 +450,7 @@ export class CommandNode extends BaseNode {
         };
       }
 
-      const fleets = await this.fleetsService.getUserFleets(user.id);
+      const fleets = await this.context.services.fleetsService.getUserFleets(user.id);
       if (fleets.length === 0) {
         return {
           success: false,
@@ -475,7 +468,7 @@ export class CommandNode extends BaseNode {
       const targetFleet = fleets[listIndex - 1];
 
       try {
-        await this.fleetsService.addVesselToFleet(
+        await this.context.services.fleetsService.addVesselToFleet(
           {
             fleetId: targetFleet.id,
             vesselId: imo,
@@ -526,7 +519,7 @@ export class CommandNode extends BaseNode {
         };
       }
 
-      const fleets = await this.fleetsService.getUserFleets(user.id);
+      const fleets = await this.context.services.fleetsService.getUserFleets(user.id);
       if (fleets.length === 0) {
         return {
           success: false,
@@ -544,7 +537,7 @@ export class CommandNode extends BaseNode {
       const targetFleet = fleets[listIndex - 1];
 
       try {
-        await this.fleetsService.removeVesselFromFleet(targetFleet.id, imo, user.id);
+        await this.context.services.fleetsService.removeVesselFromFleet(targetFleet.id, imo, user.id);
 
         return {
           success: true,
@@ -579,7 +572,7 @@ export class CommandNode extends BaseNode {
         };
       }
 
-      const fleets = await this.fleetsService.getUserFleets(user.id);
+      const fleets = await this.context.services.fleetsService.getUserFleets(user.id);
       if (fleets.length === 0) {
         return {
           success: false,
@@ -595,7 +588,7 @@ export class CommandNode extends BaseNode {
       }
 
       const targetFleet = fleets[listIndex - 1];
-      const vessels = await this.fleetsService.getFleetVessels(targetFleet.id, user.id);
+      const vessels = await this.context.services.fleetsService.getFleetVessels(targetFleet.id, user.id);
 
       if (vessels.length === 0) {
         return {
@@ -625,55 +618,211 @@ export class CommandNode extends BaseNode {
   // ==================== Reminder Command Handlers ====================
 
   private async handleReminderCommand(query: string, user: any): Promise<CommandResult> {
-    if (!user || !user.id) {
+    try {
+      
+
+      if (!query || query.trim().length === 0) {
+        return {
+          success: false,
+          message: '<b>Error:</b> Please provide a reminder query.\n\n<b>Usage:</b> /reminder &lt;your query&gt;\n\n<b>Example:</b> /reminder notify me when vessel IMO 9571648 arrives at port',
+        };
+      }
+
+      // Extract structured reminder data using LLM
+      this.logger.debug(`Extracting reminder data from query: "${query}"`);
+      const { reminderType, searchParams } = await this.context.services.reminderExtractionService.extractReminderData(
+        query.trim(),
+        user.id,
+      );
+
+      // Resolve fleet reference if detected
+      if (searchParams.fleetIndex || searchParams.fleetName) {
+        const fleets = await this.context.services.fleetsService.getUserFleets(user.id);
+        let resolvedFleetId: number | undefined;
+
+        if (searchParams.fleetIndex) {
+          // Resolve by index (e.g., "fleet 1", "fleet 2")
+          const fleetIndex = searchParams.fleetIndex;
+          if (fleetIndex > 0 && fleetIndex <= fleets.length) {
+            resolvedFleetId = fleets[fleetIndex - 1].id;
+            this.logger.debug(`Resolved fleet index ${fleetIndex} → Fleet ID: ${resolvedFleetId} (${fleets[fleetIndex - 1].name})`);
+          } else {
+            return {
+              success: false,
+              message: `Fleet number ${fleetIndex} not found. Use /fleet_list to see your fleets.`,
+            };
+          }
+        } else if (searchParams.fleetName) {
+          // Resolve by name (e.g., "my fleet My Shipping Fleet")
+          const fleetNameMatch = fleets.find(
+            (f) =>
+              f.name.toLowerCase().includes(searchParams.fleetName!.toLowerCase()) ||
+              searchParams.fleetName!.toLowerCase().includes(f.name.toLowerCase()),
+          );
+
+          if (fleetNameMatch) {
+            resolvedFleetId = fleetNameMatch.id;
+            this.logger.debug(`Resolved fleet name "${searchParams.fleetName}" → Fleet ID: ${resolvedFleetId} (${fleetNameMatch.name})`);
+          } else {
+            return {
+              success: false,
+              message: `Fleet "${searchParams.fleetName}" not found. Use /fleet_list to see your fleets.`,
+            };
+          }
+        }
+
+        // Add resolved fleetId to search params
+        if (resolvedFleetId) {
+          searchParams.fleetId = resolvedFleetId;
+          // Clean up temp fields
+          delete searchParams.fleetIndex;
+          delete searchParams.fleetName;
+        }
+      }
+
+      this.logger.debug(`Extracted reminder type: ${reminderType}`);
+      this.logger.debug(`Extracted search params: ${JSON.stringify(searchParams, null, 2)}`);
+
+      // Create reminder with structured parameters
+      const reminder = await this.context.services.remindersService.createReminder({
+        user_id: user.id,
+        reminder_type: reminderType,
+        user_query: query.trim(),
+        search_params: searchParams,
+        check_interval_minutes: 5,
+        notification_message: `🔔 Alert: ${query.trim()}`,
+      });
+
+      // Format search params for display
+      const formattedParams = this.formatSearchParams(searchParams);
+      const formattedType = reminderType.replace('_', ' ').toUpperCase();
+
+      let successMessage = `✅ <b>Reminder Created!</b>\n\n<b>Your reminder:</b> ${query.trim()}\n<b>Trigger:</b> ${formattedType}`;
+      if (formattedParams) {
+        successMessage += `\n\n${formattedParams}`;
+      }
+      successMessage += `\n\nYou will be notified when your criteria are met. Use /reminders to see all your active reminders.`;
+
+      return {
+        success: true,
+        message: successMessage,
+      };
+    } catch (error) {
+      this.logger.error(`Error creating reminder: ${error instanceof Error ? error.message : String(error)}`);
       return {
         success: false,
-        message: 'You must be logged in to create reminders. Please use /start to begin.',
+        message: 'Sorry, there was an error creating the reminder. Please try again later.',
       };
     }
-
-    if (!query || query.trim().length === 0) {
-      return {
-        success: false,
-        message: '<b>Error:</b> Please provide a reminder query.\n\n<b>Usage:</b> /reminder &lt;your query&gt;\n\n<b>Example:</b> /reminder notify me when vessel IMO 9571648 arrives at port',
-      };
-    }
-
-    // TODO: Implement when RemindersService is available
-    return {
-      success: false,
-      message: '🚧 Reminder management is coming soon!',
-    };
   }
 
   private async handleListRemindersCommand(user: any): Promise<CommandResult> {
-    if (!user || !user.id) {
+    try {
+      
+
+      const reminders = await this.context.services.remindersService.getActiveReminders(user.id);
+
+      if (reminders.length === 0) {
+        return {
+          success: true,
+          message: '📋 <b>No Active Reminders</b>\n\nYou don\'t have any active reminders. Use /reminder to create one.',
+        };
+      }
+
+      let message = `📋 <b>Your Active Reminders (${reminders.length})</b>\n\n`;
+
+      reminders.forEach((reminder, index) => {
+        const lastChecked = reminder.lastCheckedAt
+          ? new Date(reminder.lastCheckedAt).toLocaleString()
+          : 'Never';
+
+        const reminderType = reminder.reminderType
+          ? reminder.reminderType.replace('_', ' ').toUpperCase()
+          : 'GENERAL';
+
+        message += `${index + 1}. <b>Trigger: ${reminderType}</b>\n`;
+        message += `   ${reminder.userQuery || 'N/A'}\n`;
+
+        // Add search criteria if available
+        if (reminder.searchParams && Object.keys(reminder.searchParams).length > 0) {
+          const formattedParams = this.formatSearchParams(reminder.searchParams);
+          if (formattedParams) {
+            message += `\n   ${formattedParams.split('\n').join('\n   ')}\n`;
+          }
+        }
+
+        message += `\n   Last checked: ${lastChecked}\n\n`;
+      });
+
+      return {
+        success: true,
+        message,
+      };
+    } catch (error) {
+      this.logger.error(`Error listing reminders: ${error instanceof Error ? error.message : String(error)}`);
       return {
         success: false,
-        message: 'You must be logged in to view reminders. Please use /start to begin.',
+        message: 'Sorry, there was an error retrieving your reminders. Please try again later.',
       };
     }
-
-    // TODO: Implement when RemindersService is available
-    return {
-      success: false,
-      message: '🚧 Reminder management is coming soon!',
-    };
   }
 
   private async handleDeleteReminderCommand(indexStr: string, user: any): Promise<CommandResult> {
-    if (!user || !user.id) {
+    try {
+     
+
+      // Parse index number (1-based from the list)
+      const listIndex = parseInt(indexStr, 10);
+
+      if (isNaN(listIndex) || listIndex < 1) {
+        return {
+          success: false,
+          message: 'Invalid reminder number. Please provide a valid number (1, 2, 3, etc.).\n\n<b>Usage:</b> /delete_reminder &lt;number&gt;\n\n<b>Example:</b> /delete_reminder 2',
+        };
+      }
+
+      // Get all user's active reminders
+      const reminders = await this.context.services.remindersService.getActiveReminders(user.id);
+
+      if (reminders.length === 0) {
+        return {
+          success: false,
+          message: 'You have no active reminders to delete.',
+        };
+      }
+
+      // Check if index is within range
+      if (listIndex > reminders.length) {
+        return {
+          success: false,
+          message: `Invalid reminder number. You have ${reminders.length} reminder(s). Use /reminders to see them.`,
+        };
+      }
+
+      // Get the reminder at the specified index (convert from 1-based to 0-based)
+      const reminderToDelete = reminders[listIndex - 1];
+      const actualReminderId = reminderToDelete.id;
+
+      // Format reminder info for the confirmation message
+      const reminderType = reminderToDelete.reminderType
+        ? reminderToDelete.reminderType.replace('_', ' ').toUpperCase()
+        : 'GENERAL';
+      const reminderQuery = reminderToDelete.userQuery || 'N/A';
+
+      // Delete the reminder
+      await this.context.services.remindersService.deleteReminder(actualReminderId);
+
+      return {
+        success: true,
+        message: `✅ <b>Reminder Deleted</b>\n\nReminder #${listIndex} (${reminderType}) has been removed.\n\n<b>Reminder:</b> ${reminderQuery}`,
+      };
+    } catch (error) {
+      this.logger.error(`Error deleting reminder: ${error instanceof Error ? error.message : String(error)}`);
       return {
         success: false,
-        message: 'You must be logged in to delete reminders. Please use /start to begin.',
+        message: 'Sorry, there was an error deleting the reminder. Please try again later.',
       };
     }
-
-    // TODO: Implement when RemindersService is available
-    return {
-      success: false,
-      message: '🚧 Reminder management is coming soon!',
-    };
   }
 
   // ==================== Utility Methods ====================
@@ -684,6 +833,41 @@ export class CommandNode extends BaseNode {
       month: 'long',
       day: 'numeric',
     });
+  }
+
+  private formatSearchParams(searchParams: Record<string, any>): string {
+    if (!searchParams || Object.keys(searchParams).length === 0) {
+      return '';
+    }
+
+    const parts: string[] = [];
+
+    if (searchParams.imo) {
+      parts.push(`IMO: ${searchParams.imo}`);
+    }
+    if (searchParams.mmsi) {
+      parts.push(`MMSI: ${searchParams.mmsi}`);
+    }
+    if (searchParams.vesselName) {
+      parts.push(`Vessel: ${searchParams.vesselName}`);
+    }
+    if (searchParams.portName) {
+      parts.push(`Port: ${searchParams.portName}`);
+    }
+    if (searchParams.portCode) {
+      parts.push(`Port Code: ${searchParams.portCode}`);
+    }
+    if (searchParams.fleetId) {
+      parts.push(`Fleet ID: ${searchParams.fleetId}`);
+    }
+    if (searchParams.latitude !== undefined && searchParams.longitude !== undefined) {
+      parts.push(`Location: ${searchParams.latitude}, ${searchParams.longitude}`);
+    }
+    if (searchParams.query) {
+      parts.push(`Query: ${searchParams.query}`);
+    }
+
+    return parts.length > 0 ? parts.join(' | ') : '';
   }
 
   validateConfig(): boolean {

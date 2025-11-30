@@ -1,4 +1,4 @@
-import { UniversalAgentInvokeInput, UniversalMessage } from "../types";
+import { UniversalAgentInvokeInput, UniversalMessage, UniversalMessageContent } from "../types";
 
 /**
  * Normalize different input formats to a consistent messages array format
@@ -42,11 +42,48 @@ export function normalizeInput(input: UniversalAgentInvokeInput): UniversalMessa
 }
 
 /**
+ * Extract text from UniversalMessageContent
+ * For multimodal content, extracts only text parts
+ */
+export function extractTextFromContent(content: UniversalMessageContent): string {
+  if (typeof content === "string") {
+    return content;
+  }
+  
+  // For array content, extract text parts
+  const textParts = content
+    .filter((part) => part.type === "text")
+    .map((part) => (part as { type: "text"; text: string }).text);
+  
+  return textParts.join(" ") || "";
+}
+
+/**
+ * Convert UniversalMessageContent to LangChain format
+ * LangChain accepts string or array of content parts
+ */
+export function toLangChainContent(content: UniversalMessageContent): string | Array<{ type: string; [key: string]: any }> {
+  if (typeof content === "string") {
+    return content;
+  }
+  
+  // Convert to LangChain format (already compatible)
+  return content as Array<{ type: string; [key: string]: any }>;
+}
+
+/**
  * Extract the last user message content (for backward compatibility)
+ * Returns text only, extracting from multimodal content if needed
  */
 export function extractUserInput(input: UniversalAgentInvokeInput): string {
   const messages = normalizeInput(input);
   const lastUserMessage = messages.filter((m) => m.role === "user").pop();
-  return lastUserMessage?.content || messages[messages.length - 1]?.content || "";
+  const content = lastUserMessage?.content || messages[messages.length - 1]?.content;
+  
+  if (!content) {
+    return "";
+  }
+  
+  return extractTextFromContent(content);
 }
 

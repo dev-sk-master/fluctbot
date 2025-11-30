@@ -35,7 +35,7 @@ export class EchoProcessorNode extends BaseNode {
     context: NodeExecutionContext,
   ): Promise<MessageContent> {
     //this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
-    const message = context.sharedData.inputMessage as FluctMessage;
+    const message = context.sharedData.message as FluctMessage;
 
     if (!message || !message.content) {
       throw new Error('No input message content found');

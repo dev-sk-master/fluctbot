@@ -14,6 +14,12 @@ import {
   MessageMetadata,
   MessageContent,
 } from '../../types/message.types';
+import { WorkflowNodeContext } from '../../services/workflow-node-context';
+import ffmpeg from 'fluent-ffmpeg';
+import { path as ffmpegPath } from '@ffmpeg-installer/ffmpeg';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import * as os from 'os';
 
 export interface TelegramInputConfig {
   botToken?: string; // Usually handled at service level
@@ -29,6 +35,7 @@ export class TelegramInputNode extends BaseNode {
     id: string,
     name: string,
     config: TelegramInputConfig = {},
+    private readonly context?: WorkflowNodeContext,
   ) {
     super(id, name, 'telegram-input', config);
   }
@@ -60,6 +67,7 @@ export class TelegramInputNode extends BaseNode {
 
   /**
    * Process and normalize the message
+   * Downloads and converts media files to base64 for downstream nodes
    */
   protected async exec(
     prepResult: unknown,
@@ -77,11 +85,94 @@ export class TelegramInputNode extends BaseNode {
     // Ensure status is set
     message.status = MessageStatus.PROCESSING;
 
+    // Download and convert media files to base64 if needed
+    // This ensures downstream nodes (like AI agent) don't need to call source services
+    if (this.context?.services.telegramService && message.metadata.source === MessageSource.TELEGRAM) {
+      await this.enrichContentWithBase64(message.content);
+    }
+
     this.logger.debug(
       `Processing Telegram message ${message.id} from chat ${message.metadata.chatId}`,
     );
 
     return message;
+  }
+
+  /**
+   * Download and convert media files to base64
+   * Populates base64Data, base64Audio, base64Thumbnail fields in MessageContent
+   */
+  private async enrichContentWithBase64(content: MessageContent): Promise<void> {
+    if (!this.context?.services.telegramService) {
+      return;
+    }
+
+    const telegramService = this.context.services.telegramService;
+
+    try {
+      switch (content.type) {
+        case MessageType.IMAGE:
+          if (content.fileUrl && !content.base64Data) {
+            this.logger.debug(`Downloading image ${content.fileUrl} for base64 conversion`);
+            const base64Image = await telegramService.downloadFileAsBase64(content.fileUrl);
+            if (base64Image) {
+              content.base64Data = base64Image;
+              // Also get direct URL as fallback
+              const directUrl = await telegramService.getFileUrl(content.fileUrl);
+              if (directUrl) {
+                content.directUrl = directUrl;
+              }
+            }
+          }
+          break;
+
+        case MessageType.AUDIO:
+          if (content.audioUrl && !content.base64Audio) {
+            this.logger.debug(`Downloading audio ${content.audioUrl} for base64 conversion`);
+            await this.processAudioContent(content, telegramService);
+          }
+          break;
+
+        case MessageType.DOCUMENT:
+        case MessageType.FILE:
+          if (content.fileUrl && !content.base64Data) {
+            this.logger.debug(`Downloading file ${content.fileUrl} for base64 conversion`);
+            const base64File = await telegramService.downloadFileAsBase64(content.fileUrl);
+            if (base64File) {
+              content.base64Data = base64File;
+            }
+          }
+          break;
+
+        case MessageType.VIDEO:
+          // Download thumbnail if available
+          if (content.thumbnailUrl && !content.base64Thumbnail) {
+            this.logger.debug(`Downloading video thumbnail ${content.thumbnailUrl} for base64 conversion`);
+            const base64Thumbnail = await telegramService.downloadFileAsBase64(content.thumbnailUrl);
+            if (base64Thumbnail) {
+              content.base64Thumbnail = base64Thumbnail;
+            }
+          }
+          // Also download video file if needed (for future video processing)
+          if (content.fileUrl && !content.base64Data) {
+            this.logger.debug(`Downloading video ${content.fileUrl} for base64 conversion`);
+            const base64Video = await telegramService.downloadFileAsBase64(content.fileUrl);
+            if (base64Video) {
+              content.base64Data = base64Video;
+            }
+          }
+          break;
+
+        case MessageType.TEXT:
+          // No media to download
+          break;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to enrich content with base64: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      // Continue without base64 data - downstream nodes can handle fallback
+    }
   }
 
   /**
@@ -97,17 +188,152 @@ export class TelegramInputNode extends BaseNode {
     //this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
     const message = execResult as FluctMessage;
 
-    // Store in shared data for next nodes
-    context.sharedData.inputMessage = message;
-    context.sharedData.source = message.metadata.source;
-    context.sharedData.chatId = message.metadata.chatId;
-    context.sharedData.userId = message.metadata.userId;
+    // Store in shared data for next nodes (mutable version)
+    // Note: source, chatId, userId are available via message.metadata.*
+    context.sharedData.message = message;
 
     this.logger.debug(
       `Telegram input node completed for message ${message.id}`,
     );
 
     return undefined; // Continue to next node
+  }
+
+  /**
+   * Process audio content: download, convert to WAV if needed, and store as base64
+   */
+  private async processAudioContent(
+    content: MessageContent,
+    telegramService: any,
+  ): Promise<void> {
+    if (!content.audioUrl) {
+      return;
+    }
+
+    let tempAudioPath: string | null = null;
+    let tempWavPath: string | null = null;
+
+    try {
+      // Download audio as buffer
+      const audioBuffer = await telegramService.downloadFileAsBuffer(content.audioUrl);
+      if (!audioBuffer) {
+        this.logger.warn('Failed to download audio buffer');
+        return;
+      }
+
+      // Determine file extension from mime type or default to ogg
+      const mimeType = content.mimeType || 'audio/ogg';
+      const fileExtension = this.getFileExtensionFromMimeType(mimeType) || 'ogg';
+
+      // Save downloaded audio to temporary file
+      const tempDir = os.tmpdir();
+      tempAudioPath = path.join(tempDir, `telegram_audio_${Date.now()}.${fileExtension}`);
+      await fs.writeFile(tempAudioPath, audioBuffer);
+
+      // Convert to WAV if not already WAV
+      let finalAudioBuffer = audioBuffer;
+      let finalMimeType = 'audio/wav';
+
+      if (fileExtension !== 'wav') {
+        this.logger.debug(`Converting ${fileExtension} to WAV format...`);
+        tempWavPath = path.join(tempDir, `telegram_audio_${Date.now()}.wav`);
+        
+        await this.convertOggToWav(tempAudioPath, tempWavPath);
+        this.logger.debug('Audio conversion to WAV complete!');
+
+        // Read the converted WAV file
+        finalAudioBuffer = await fs.readFile(tempWavPath);
+      } else {
+        // Already WAV, use original
+        finalMimeType = 'audio/wav';
+      }
+
+      // Convert to base64 for LLM
+      const base64Audio = finalAudioBuffer.toString('base64');
+      content.base64Audio = base64Audio;
+      
+      // Update mime type to WAV for LLM compatibility
+      content.mimeType = finalMimeType;
+
+      this.logger.debug(`Audio processed successfully: ${finalAudioBuffer.length} bytes, format: ${finalMimeType}`);
+    } catch (error) {
+      this.logger.error(
+        `Error processing audio: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      // Fallback: try to use original audio without conversion
+      try {
+        const base64Audio = await telegramService.downloadFileAsBase64(content.audioUrl);
+        if (base64Audio) {
+          content.base64Audio = base64Audio;
+        }
+      } catch (fallbackError) {
+        this.logger.error(`Fallback audio download also failed: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`);
+      }
+    } finally {
+      // Clean up temporary files
+      if (tempAudioPath) {
+        try {
+          await fs.unlink(tempAudioPath);
+        } catch (err: unknown) {
+          this.logger.warn(`Failed to delete temporary audio file: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      if (tempWavPath) {
+        try {
+          await fs.unlink(tempWavPath);
+        } catch (err: unknown) {
+          this.logger.warn(`Failed to delete temporary WAV file: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+  }
+
+  /**
+   * Convert OGG (or other audio format) to WAV using ffmpeg
+   */
+  private async convertOggToWav(inputPath: string, outputPath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!ffmpegPath) {
+        reject(new Error('@ffmpeg-installer/ffmpeg not found'));
+        return;
+      }
+
+      this.logger.debug(`Using FFmpeg at: ${ffmpegPath}`);
+
+      ffmpeg(inputPath)
+        .setFfmpegPath(ffmpegPath)
+        .toFormat('wav')
+        .on('end', () => {
+          this.logger.debug(`Audio conversion completed: ${outputPath}`);
+          resolve();
+        })
+        .on('error', (err: Error) => {
+          this.logger.error(`FFmpeg conversion error: ${err.message}`);
+          reject(err);
+        })
+        .save(outputPath);
+    });
+  }
+
+  /**
+   * Get file extension from MIME type
+   */
+  private getFileExtensionFromMimeType(mimeType: string): string | null {
+    const mimeToExt: Record<string, string> = {
+      'audio/ogg': 'ogg',
+      'audio/oga': 'oga',
+      'audio/opus': 'opus',
+      'audio/wav': 'wav',
+      'audio/wave': 'wav',
+      'audio/x-wav': 'wav',
+      'audio/mpeg': 'mp3',
+      'audio/mp3': 'mp3',
+      'audio/mp4': 'm4a',
+      'audio/x-m4a': 'm4a',
+      'audio/webm': 'webm',
+    };
+
+    return mimeToExt[mimeType.toLowerCase()] || null;
   }
 
   validateConfig(): boolean {

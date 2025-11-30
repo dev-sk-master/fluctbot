@@ -36,14 +36,24 @@ export interface MessageMetadata {
 
 export interface MessageContent {
   type: MessageType;
-  text?: string;
-  audioUrl?: string;
-  fileUrl?: string;
+  text?: string; // Text content for TEXT type, or caption for IMAGE/AUDIO/FILE/DOCUMENT/VIDEO
+  
+  // File references (source-specific IDs/URLs)
+  audioUrl?: string; // Source file ID or URL (e.g., Telegram file_id)
+  fileUrl?: string; // Source file ID or URL (e.g., Telegram file_id)
   fileName?: string;
   mimeType?: string;
   fileSize?: number;
-  thumbnailUrl?: string;
+  thumbnailUrl?: string; // Source thumbnail ID or URL
   duration?: number; // For audio/video
+  
+  // Pre-processed data (populated by input nodes)
+  // These are set by input nodes so downstream nodes don't need to call source services
+  base64Data?: string; // Base64-encoded file data (for images, documents, files)
+  base64Audio?: string; // Base64-encoded audio data
+  base64Thumbnail?: string; // Base64-encoded thumbnail (for videos)
+  directUrl?: string; // Direct download URL (if available, as fallback)
+  
   [key: string]: unknown; // Additional content-specific data
 }
 

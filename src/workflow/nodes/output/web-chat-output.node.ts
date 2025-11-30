@@ -36,7 +36,7 @@ export class WebChatOutputNode extends BaseNode {
     context: NodeExecutionContext,
   ): Promise<MessageResponse> {
     //this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
-    const message = context.sharedData.inputMessage as FluctMessage;
+    const message = context.sharedData.message as FluctMessage;
     const processedContent = context.sharedData.processedContent as
       | MessageContent
       | undefined;

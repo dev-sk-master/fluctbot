@@ -28,7 +28,7 @@ export class UnifiedOutputNode extends BaseNode {
     context: NodeExecutionContext,
   ): Promise<{ message: FluctMessage; source: MessageSource }> {
     //this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
-    const message = context.sharedData.inputMessage as FluctMessage;
+    const message = context.sharedData.message as FluctMessage;
     const processedContent = context.sharedData.processedContent as
       | MessageContent
       | undefined;
@@ -88,8 +88,7 @@ export class UnifiedOutputNode extends BaseNode {
     //this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
     const result = execResult as { source: MessageSource; action: string };
     
-    // Store source in shared data for output nodes
-    context.sharedData.source = result.source;
+    // Source is available via message.metadata.source, no need to store separately
 
     // Return action for routing to appropriate output node
     return result.action;

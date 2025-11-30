@@ -5,8 +5,7 @@ import {
   NodeExecutionResult,
 } from '../../types/workflow.types';
 import { FluctMessage, MessageSource, MessageType } from '../../types/message.types';
-import { UsersService } from '../../../users/users.service';
-import { CommandsService } from '../../../common/services/commands.service';
+import { WorkflowNodeContext } from '../../services/workflow-node-context';
 import { Platform } from '../../../users/entities/user-platform.entity';
 
 export interface AccessControlConfig {
@@ -21,8 +20,7 @@ export class AccessControlNode extends BaseNode {
     id: string,
     name: string,
     config: AccessControlConfig = {},
-    private readonly usersService: UsersService,
-    private readonly commandsService: CommandsService,
+    private readonly context: WorkflowNodeContext,
   ) {
     super(id, name, 'access-control', config);
   }
@@ -31,7 +29,7 @@ export class AccessControlNode extends BaseNode {
     context: NodeExecutionContext,
   ): Promise<{ message: FluctMessage; platform: Platform | null; platformIdentifier: string | null }> {
     //this.logger.debug(`[prep] Context:\n${JSON.stringify(context, null, 2)}`);
-    const message = context.message as FluctMessage;
+    const message = context.sharedData.message as FluctMessage;
     const metadata = message.metadata;
 
     // Extract platform information from message source
@@ -62,7 +60,7 @@ export class AccessControlNode extends BaseNode {
 
     // First, check user status and onboarding requirements
     // Check if user exists
-    const user = await this.usersService.findByPlatform(
+    const user = await this.context.services.usersService.findByPlatform(
       platform,
       platformIdentifier,
     );
@@ -105,9 +103,9 @@ export class AccessControlNode extends BaseNode {
 
     // Now check if message is a command (only for users with complete profiles)
     if (message.content.type === MessageType.TEXT && message.content.text) {
-      const isCommand = this.commandsService.isCommand(message.content.text);
+      const isCommand = this.context.services.commandsService.isCommand(message.content.text);
       if (isCommand) {
-        const command = this.commandsService.extractCommand(message.content.text);
+        const command = this.context.services.commandsService.extractCommand(message.content.text);
         this.logger.debug(
           `User ${user.id} with complete profile sent command: /${command}, routing to command processor`,
         );
