@@ -27,7 +27,7 @@ export class SeedSubscriptionPlans1732900001000
         1,
         365,
         true,
-        '{}',
+        jsonb_build_object('stripe_product_id', 'prod_TWVjskWDuc5TWj'),
         '{"fleets": 1, "reminders": 3}',
         '{}',
         NOW(),
@@ -59,9 +59,18 @@ export class SeedSubscriptionPlans1732900001000
         1,
         365,
         true,
-        '{}',
+        jsonb_build_object('stripe_product_id', 'prod_TWVmStuP1yegFh'),
         '{"fleets": 5, "reminders": 20}',
-        '{"monthly": 5, "yearly": 50}',
+        jsonb_build_object(
+          'monthly', jsonb_build_object(
+            'amount', 5,
+            'stripe_price_id', 'price_1SZSoHHlEU90bP9J3ioSOT1O'
+          ),
+          'yearly', jsonb_build_object(
+            'amount', 50,
+            'stripe_price_id', 'price_1SZSkYHlEU90bP9JpwcB0n9P'
+          )
+        ),
         NOW(),
         NOW()
       )
@@ -91,9 +100,18 @@ export class SeedSubscriptionPlans1732900001000
         1,
         365,
         true,
-        '{}',
+        jsonb_build_object('stripe_product_id', 'prod_TWVmlPBVUtqRhx'),
         '{"fleets": "unlimited", "reminders": "unlimited"}',
-        '{"monthly": 10, "yearly": 100}',
+        jsonb_build_object(
+          'monthly', jsonb_build_object(
+            'amount', 10,
+            'stripe_price_id', 'price_1SZSnsHlEU90bP9JPx9mTRPn'
+          ),
+          'yearly', jsonb_build_object(
+            'amount', 100,
+            'stripe_price_id', 'price_1SZSlHHlEU90bP9JfN2TA5qs'
+          )
+        ),
         NOW(),
         NOW()
       )

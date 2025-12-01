@@ -296,11 +296,31 @@ export class AIAgentNode extends BaseNode {
   ): Promise<MessageContent> {
     //this.logger.debug(`[exec] Context:\n${JSON.stringify(context, null, 2)}`);
     //this.logger.debug(`[exec] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
-    const { userInput, user } = prepResult as { message: FluctMessage; user: any; userInput: UniversalMessageContent };
+    const { userInput, user, message } = prepResult as { message: FluctMessage; user: any; userInput: UniversalMessageContent };
     const config = this.config as AIAgentConfig;
 
     try {
-      // Initialize agent if not already done
+      // 1. Get or create conversation
+      // This will return existing conversation with SAME thread_id if it exists
+      // Or create new conversation with NEW thread_id if it doesn't exist
+      // Note: User message is already saved by access-control node
+      const conversationsService = this.context.services.conversationsService;
+      const conversation = await conversationsService.getOrCreateConversation(
+        user.id,
+        message.metadata.platform,
+        message.metadata.platformIdentifier,
+        message.metadata,
+      );
+
+      // 2. Get conversation history (last 20 messages)
+      // Exclude current message ID to avoid duplicates (user message already saved by access-control node)
+      const history = await conversationsService.getConversationHistory(
+        conversation.id,
+        20,
+        message.id, // Exclude current message to prevent duplicate
+      );
+
+      // 4. Initialize agent if not already done
       if (!this.agentInitialized) {
         await this.initializeAgent(config, user);
       }
@@ -309,43 +329,83 @@ export class AIAgentNode extends BaseNode {
         throw new Error('Agent not initialized');
       }
 
-      // Format input for agent
-      // If userInput is string, pass directly; if array (multimodal), wrap in message format
+      // 5. Build input with conversation history
+      // If userInput is string, prepend history; if array (multimodal), prepend history
       let agentInput: UniversalAgentInvokeInput;
+      
       if (typeof userInput === 'string') {
-        agentInput = userInput;
+        // Text input: prepend history, then current message
+        agentInput = [
+          ...history, // Previous conversation messages
+          {
+            role: 'user' as const,
+            content: userInput,
+          },
+        ];
       } else {
-        // Multimodal input - wrap in message format for OpenRouter
-        agentInput = [{
-          role: 'user' as const,
-          content: userInput,
-        }];
+        // Multimodal input: prepend history, then current multimodal message
+        agentInput = [
+          ...history, // Previous conversation messages
+          {
+            role: 'user' as const,
+            content: userInput,
+          },
+        ];
       }
 
-      // Invoke agent with user input
+      // 6. Use persistent thread_id for the agent framework
+      // This SAME ID is used for all messages in this conversation,
+      // enabling the LLM to maintain conversation context
+      const agentFramework = config.framework || 'deepagents';
+      const frameworkOptions: any = {};
+      
+      if (agentFramework === 'deepagents' || agentFramework === 'langgraph') {
+        frameworkOptions[agentFramework] = {
+          configurable: {
+            thread_id: conversation.threadId, // Persistent ID - SAME for all messages!
+            recursion_limit: 5,
+          },
+        };
+      } 
+      // else if (agentFramework === 'openai-agents') {
+      //   frameworkOptions['openai-agents'] = {
+      //     thread_id: conversation.threadId, // Use thread_id directly
+      //   };
+      // } else if (agentFramework === 'pocketflow') {
+      //   frameworkOptions.pocketflow = {
+      //     session_id: conversation.threadId, // Use thread_id as session_id
+      //   };
+      // }
+      // Other frameworks can use thread_id as their session/thread identifier
+
+      // 7. Invoke agent with conversation context
       const inputSummary = this.formatInputForLogging(agentInput);
-      this.logger.debug(`Invoking AI agent with input: ${inputSummary}`);
+      this.logger.debug(
+        `Invoking AI agent with conversation context (${history.length} previous messages, thread_id: ${conversation.threadId}): ${inputSummary}`,
+      );
+      console.log('agentInput',JSON.stringify(agentInput,null,2));
       const result = await this.agent.invoke(agentInput, {
-        framework: {
-          deepagents: {
-            configurable: {
-              thread_id: uuidv4(),
-              recursion_limit: 5,
-            },
-          }
-        },
+        framework: frameworkOptions,
       });
 
       this.logger.debug(`AI Agent response: ${JSON.stringify(result, null, 2)}`);
 
-      // Extract output from result
+      // 8. Extract output from result
       const outputText = result.output || 'I apologize, but I could not generate a response.';
 
-      // Create response content
+      // 9. Create response content
+      // Note: Response will be saved to conversation by unified-output node
       const outputContent: MessageContent = {
         type: MessageType.TEXT,
         text: outputText,
       };
+
+      // Store tool calls in sharedData for unified-output to save (if available)
+      // Tool calls might be in result.metadata or result object
+      const toolCalls = (result as any).toolCalls || (result as any).metadata?.toolCalls;
+      if (toolCalls) {
+        context.sharedData.aiAgentToolCalls = toolCalls;
+      }
 
       return outputContent;
     } catch (error) {
@@ -355,7 +415,7 @@ export class AIAgentNode extends BaseNode {
       // Return error message to user
       return {
         type: MessageType.TEXT,
-        text: `I encountered an error while processing your request: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`,
+        text: 'I apologize, but I encountered an error processing your request. Please try again.',
       };
     }
   }
@@ -402,7 +462,29 @@ export class AIAgentNode extends BaseNode {
       const checkpointer = new MemorySaver();
 
       // Get system prompt
-      const systemPrompt = `You are Fluct's Maritime Assistant.`;
+      const systemPrompt = `
+You are Fluct's Maritime Assistant.
+
+Your job is to provide accurate, concise, and helpful information about:
+- maritime operations and shipping
+- navigation, ports, and logistics
+- vessel types, AIS data, and movements
+- maritime regulations and compliance
+- weather and conditions at sea
+- maritime history and general knowledge
+
+Guidelines:
+- Be factual, clear, and professional.
+- Answer only what the user asked, unless important context is required for clarity.
+- If a question is ambiguous, choose the most reasonable interpretation and state your assumption.
+- Use standard maritime units (knots, NM, TEU, GT, UTC) unless the user specifies otherwise.
+- When referencing times, default to UTC.
+- If multiple questions are asked, answer each one separately and clearly.
+- For images: extract visible text, combine with caption, and answer all questions found.
+- For audio: transcribe all spoken content and answer all questions or instructions found.
+- Never fabricate AIS or vessel data; if unavailable, explain what is missing and what can be done.
+- Keep responses concise but not lacking important details.      
+      `;
 
       // Create agent configuration
       const agentConfig: UniversalAgentConfig = {

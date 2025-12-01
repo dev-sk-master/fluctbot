@@ -38,7 +38,7 @@ export class DatalisticToolsRegistry {
   private getVesselInfoTool(): UniversalTool {
     const paramsSchema = z.object({
       identifier: z.string().describe('Vessel identifier: IMO number (e.g., "9571648"), MMSI (e.g., "123456789"), or vessel name'),
-      type: z.enum(['imo', 'mmsi', 'name']).optional().describe('Type of identifier: imo, mmsi, or name. If not specified, will try to detect automatically'),
+      type: z.string().optional().describe('Type of identifier: must be "imo", "mmsi", or "name". If not specified, will try to detect automatically from the identifier format'),
     });
 
     return {
@@ -48,7 +48,14 @@ export class DatalisticToolsRegistry {
       execute: async (params: InferToolParams<typeof paramsSchema>) => {
         this.logger.log(`[Tool: get_vessel_info] Called with identifier: "${params.identifier}", type: ${params.type || 'auto-detect'}`);
         try {
-          const identifierType = params.type || this.detectIdentifierType(params.identifier);
+          // Validate and normalize type parameter
+          // If type is provided but invalid, ignore it and auto-detect
+          let identifierType: 'imo' | 'mmsi' | 'name';
+          if (params.type && (params.type === 'imo' || params.type === 'mmsi' || params.type === 'name')) {
+            identifierType = params.type;
+          } else {
+            identifierType = this.detectIdentifierType(params.identifier);
+          }
           const endpoint = this.getVesselEndpoint(identifierType);
 
           this.logger.debug(`[Tool: get_vessel_info] Executing request to ${endpoint}...`);
@@ -79,7 +86,7 @@ export class DatalisticToolsRegistry {
   private getAISPositionTool(): UniversalTool {
     const paramsSchema = z.object({
       identifier: z.string().describe('Vessel identifier: IMO number or MMSI'),
-      type: z.enum(['imo', 'mmsi']).optional().describe('Type of identifier: imo or mmsi. If not specified, will try to detect automatically'),
+      type: z.string().optional().describe('Type of identifier: must be "imo" or "mmsi" (not "name"). If not specified, will try to detect automatically from the identifier format'),
     });
 
     return {
@@ -89,10 +96,18 @@ export class DatalisticToolsRegistry {
       execute: async (params: InferToolParams<typeof paramsSchema>) => {
         this.logger.log(`[Tool: get_ais_position] Called with identifier: "${params.identifier}", type: ${params.type || 'auto-detect'}`);
         try {
-          const identifierType = params.type || this.detectIdentifierType(params.identifier);
-          
-          if (identifierType === 'name') {
-            throw new Error('AIS position requires IMO or MMSI, not vessel name');
+          // Validate and normalize type parameter
+          // If type is provided but invalid, ignore it and auto-detect
+          let identifierType: 'imo' | 'mmsi';
+          if (params.type && (params.type === 'imo' || params.type === 'mmsi')) {
+            identifierType = params.type;
+          } else {
+            // Auto-detect if type is invalid or not provided
+            const detected = this.detectIdentifierType(params.identifier);
+            if (detected === 'name') {
+              throw new Error('AIS position requires IMO or MMSI, not vessel name');
+            }
+            identifierType = detected;
           }
 
           this.logger.debug(`[Tool: get_ais_position] Executing request to /ais/position...`);
@@ -195,7 +210,7 @@ export class DatalisticToolsRegistry {
   private getVesselSpecsTool(): UniversalTool {
     const paramsSchema = z.object({
       identifier: z.string().describe('Vessel identifier: IMO number, MMSI, or vessel name'),
-      type: z.enum(['imo', 'mmsi', 'name']).optional().describe('Type of identifier: imo, mmsi, or name. If not specified, will try to detect automatically'),
+      type: z.string().optional().describe('Type of identifier: must be "imo", "mmsi", or "name". If not specified, will try to detect automatically from the identifier format'),
     });
 
     return {
@@ -205,7 +220,14 @@ export class DatalisticToolsRegistry {
       execute: async (params: InferToolParams<typeof paramsSchema>) => {
         this.logger.log(`[Tool: get_vessel_specs] Called with identifier: "${params.identifier}", type: ${params.type || 'auto-detect'}`);
         try {
-          const identifierType = params.type || this.detectIdentifierType(params.identifier);
+          // Validate and normalize type parameter
+          // If type is provided but invalid, ignore it and auto-detect
+          let identifierType: 'imo' | 'mmsi' | 'name';
+          if (params.type && (params.type === 'imo' || params.type === 'mmsi' || params.type === 'name')) {
+            identifierType = params.type;
+          } else {
+            identifierType = this.detectIdentifierType(params.identifier);
+          }
           const endpoint = this.getVesselSpecsEndpoint(identifierType);
 
           this.logger.debug(`[Tool: get_vessel_specs] Executing request to ${endpoint}...`);

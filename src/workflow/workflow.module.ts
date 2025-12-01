@@ -25,6 +25,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { CommonModule } from '../common/common.module';
 import { FleetsModule } from '../fleets/fleets.module';
 import { RemindersModule } from '../reminders/reminders.module';
+import { ConversationsModule } from '../conversations/conversations.module';
 import { AgentToolsService } from './services/agent-tools.service';
 import { WebSearchToolsRegistry } from './services/tool-registries/web-search-tools.registry';
 import { DatalisticToolsRegistry } from './services/tool-registries/datalistic-tools.registry';
@@ -39,6 +40,7 @@ import { forwardRef } from '@nestjs/common';
     CommonModule,
     FleetsModule,
     RemindersModule,
+    ConversationsModule,
   ],
   providers: [
     WorkflowEngine,

@@ -64,7 +64,7 @@ export class OnboardingNode extends BaseNode {
     const metadata = message.metadata;
 
     // Get or create onboarding state
-    const platform = this.mapMessageSourceToPlatform(metadata.source);
+    const platform = this.mapMessageSourceToPlatform(metadata.platform);
     const platformIdentifier = metadata.userId;
 
     if (!platform || !platformIdentifier) {
@@ -210,6 +210,7 @@ export class OnboardingNode extends BaseNode {
     //this.logger.debug(`[post] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
     //this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
     const result = execResult as { action: string; response?: string; user?: any };
+    const message = context.sharedData.message as FluctMessage;
 
     // Store response message if provided
     if (result.response) {
@@ -220,8 +221,10 @@ export class OnboardingNode extends BaseNode {
     }
 
     // If user created, store user data
+    // Note: User message saving is handled by Access Control node after onboarding completes
     if (result.user) {
       context.sharedData['user'] = result.user;
+      
       // Clear onboarding state
       const { state } = prepResult as { state: any };
       this.context.services.onboardingStateService.completeOnboarding(
@@ -325,7 +328,7 @@ export class OnboardingNode extends BaseNode {
 
       if (this.isValidEmail(email)) {
         // Store email, send verification code, and move to verification step
-        await this.context.services.emailVerificationService.sendVerificationCode(email);
+        await this.context.services.emailService.sendVerificationCode(email);
 
         this.context.services.onboardingStateService.updateState(platform, platformIdentifier, {
           email,
@@ -421,7 +424,7 @@ export class OnboardingNode extends BaseNode {
     // Send code if not sent yet
     if (!state.codeSent) {
       try {
-        const code = await this.context.services.emailVerificationService.sendVerificationCode(
+        const code = await this.context.services.emailService.sendVerificationCode(
           state.email,
         );
         this.context.services.onboardingStateService.updateState(platform, platformIdentifier, {
@@ -445,7 +448,7 @@ export class OnboardingNode extends BaseNode {
 
       if (code.length === (config.codeLength || 6)) {
         // Verify the code
-        const isValid = await this.context.services.emailVerificationService.verifyCode(
+        const isValid = await this.context.services.emailService.verifyCode(
           state.email,
           code,
         );
@@ -746,7 +749,7 @@ export class OnboardingNode extends BaseNode {
       // Send welcome email after onboarding completion
       if (user.email) {
         try {
-          await this.context.services.emailVerificationService.sendWelcomeEmail(
+          await this.context.services.emailService.sendWelcomeEmail(
             user.email,
             user.name,
           );

@@ -14,14 +14,16 @@
 import { ConfigService } from '@nestjs/config';
 import { CommandsService } from '../../common/services/commands.service';
 import { OnboardingStateService } from '../../common/services/onboarding-state.service';
-import { EmailVerificationService } from '../../common/services/email-verification.service';
+import { EmailService } from '../../common/services/email.service';
 import { UsersService } from '../../users/users.service';
 import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
 import { FleetsService } from '../../fleets/fleets.service';
 import { RemindersService } from '../../reminders/reminders.service';
 import { ReminderExtractionService } from '../../reminders/reminder-extraction.service';
+import { ConversationsService } from '../../conversations/conversations.service';
 import { AgentToolsService } from './agent-tools.service';
 import { TelegramService } from '../sources/telegram/telegram.service';
+import { StripeService } from '../../subscriptions/stripe/stripe.service';
 
 /**
  * WorkflowNodeContext - All dependencies available to workflow nodes
@@ -42,14 +44,16 @@ export interface WorkflowNodeContext {
     // Common/Shared Services
     commandsService: CommandsService;
     onboardingStateService: OnboardingStateService;
-    emailVerificationService: EmailVerificationService;
+    emailService: EmailService;
 
     // Domain/Business Logic Services
     usersService: UsersService;
     subscriptionsService: SubscriptionsService;
+    stripeService: StripeService;
     fleetsService: FleetsService;
     remindersService: RemindersService;
     reminderExtractionService: ReminderExtractionService;
+    conversationsService: ConversationsService;
 
     // AI/Agent Services
     agentToolsService: AgentToolsService;

@@ -8,7 +8,7 @@ import { BaseNode } from '../../core/base-node';
 import { NodeExecutionContext } from '../../types/workflow.types';
 import {
   FluctMessage,
-  MessageSource,
+  MessagePlatform,
   MessageType,
   MessageContent,
 } from '../../types/message.types';
@@ -17,7 +17,7 @@ import { WorkflowNodeContext } from '../../services/workflow-node-context';
 
 export interface TelegramOutputConfig {
   botToken?: string; // Usually handled at service level
-  chatId?: string; // Can be overridden from message metadata
+  platformIdentifier?: string; // Can be overridden from message metadata
   [key: string]: unknown;
 }
 
@@ -64,14 +64,13 @@ export class TelegramOutputNode extends BaseNode {
       content = processedContent || message.content;
     }
 
-    // Get chat ID from config or message metadata
-    const chatId =
-      (this.config.chatId as string) || message.metadata.chatId;
+    // Get platform identifier from config or message metadata
+    const platformIdentifier = message.metadata.platformIdentifier;
 
     const response: MessageResponse = {
       messageId: message.id,
-      source: MessageSource.TELEGRAM,
-      chatId,
+      platform: MessagePlatform.TELEGRAM,
+      platformIdentifier,
       content,
       metadata: {
         originalMessageId: message.id,
@@ -94,19 +93,19 @@ export class TelegramOutputNode extends BaseNode {
     const response = prepResult as MessageResponse;
 
     this.logger.debug(
-      `Sending message to Telegram chat ${response.chatId}`,
+      `Sending message to Telegram chat ${response.platformIdentifier}`,
     );
 
     // Use TelegramService to send message
     try {
       const sentMessage = await this.context.services.telegramService.sendMessage(
-        response.chatId,
+        response.platformIdentifier,
         response.content,
       );
 
       if (sentMessage) {
         this.logger.log(
-          `Successfully sent message to Telegram chat ${response.chatId}`,
+          `Successfully sent message to Telegram chat ${response.platformIdentifier}`,
         );
         // Update response with sent message ID
         response.metadata = {
@@ -142,7 +141,7 @@ export class TelegramOutputNode extends BaseNode {
     context.sharedData.outputSent = true;
 
     this.logger.debug(
-      `Telegram output node completed for chat ${response.chatId}`,
+      `Telegram output node completed for chat ${response.platformIdentifier}`,
     );
 
     return undefined; // Workflow complete

@@ -16,6 +16,7 @@ import { SwaggerConfig } from './config/swagger.config';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
+    rawBody: true, // Preserve raw body for Stripe webhook signature verification
   });
 
   const configService = app.get(ConfigService);

@@ -1,6 +1,6 @@
 import { Module, Global } from '@nestjs/common';
 import { OnboardingStateService } from './services/onboarding-state.service';
-import { EmailVerificationService } from './services/email-verification.service';
+import { EmailService } from './services/email.service';
 import { CommandsService } from './services/commands.service';
 import { ConfigModule } from '../config/config.module';
 
@@ -9,12 +9,12 @@ import { ConfigModule } from '../config/config.module';
   imports: [ConfigModule],
   providers: [
     OnboardingStateService,
-    EmailVerificationService,
+    EmailService,
     CommandsService,
   ],
   exports: [
     OnboardingStateService,
-    EmailVerificationService,
+    EmailService,
     CommandsService,
   ],
 })

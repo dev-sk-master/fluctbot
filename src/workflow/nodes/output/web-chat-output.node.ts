@@ -8,7 +8,7 @@ import { BaseNode } from '../../core/base-node';
 import { NodeExecutionContext } from '../../types/workflow.types';
 import {
   FluctMessage,
-  MessageSource,
+  MessagePlatform,
   MessageContent,
 } from '../../types/message.types';
 import { MessageResponse } from '../../types/message.types';
@@ -61,8 +61,8 @@ export class WebChatOutputNode extends BaseNode {
 
     const webChatResponse: MessageResponse = {
       messageId: message.id,
-      source: MessageSource.WEB_CHAT,
-      chatId: message.metadata.chatId,
+      platform: MessagePlatform.WEB_CHAT,
+      platformIdentifier: message.metadata.platformIdentifier,
       content,
       metadata: {
         originalMessageId: message.id,

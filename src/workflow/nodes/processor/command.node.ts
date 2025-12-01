@@ -4,9 +4,10 @@ import {
   NodeExecutionContext,
   NodeExecutionResult,
 } from '../../types/workflow.types';
-import { FluctMessage, MessageType, MessageContent } from '../../types/message.types';
+import { FluctMessage, MessageType, MessageContent, MessagePlatform } from '../../types/message.types';
 import { WorkflowNodeContext } from '../../services/workflow-node-context';
 import { Platform } from '../../../users/entities/user-platform.entity';
+import { SubscriptionStatus } from '../../../subscriptions/entities/subscription.entity';
 
 export interface CommandConfig {
   [key: string]: unknown;
@@ -95,7 +96,7 @@ export class CommandNode extends BaseNode {
           break;
 
         case 'subscribe':
-          result = await this.handleSubscribeCommand(user);
+          result = await this.handleSubscribeCommand(user, message);
           break;
 
         // Fleet commands
@@ -171,6 +172,8 @@ export class CommandNode extends BaseNode {
     //this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
     
     const result = execResult as CommandResult;
+    const message = context.sharedData.message as FluctMessage;
+    const user = context.sharedData['user'] as any;
 
     // Command node should only receive commands (access-control routes non-commands to echo-processor)
     // This check is a safety fallback
@@ -180,6 +183,7 @@ export class CommandNode extends BaseNode {
     }
 
     // Store command response in shared data for output node
+    // Note: Conversation tracking is handled by unified-output node
     if (result.message) {
       context.sharedData.commandResponse = result.message;
       context.sharedData.processedContent = {
@@ -205,23 +209,69 @@ export class CommandNode extends BaseNode {
   private async handleCreditsCommand(user: any): Promise<CommandResult> {
     try {
       // User is guaranteed to exist by access-control
-      // Get subscription details
-      const subscription = await this.context.services.subscriptionsService.getUserActiveSubscription(user.id);
-
+      // First try to get active subscription
+      let subscription = await this.context.services.subscriptionsService.getUserActiveSubscription(user.id);
+      
+      // If no active subscription, get the last subscription (even if inactive)
       if (!subscription) {
-        return {
-          success: false,
-          message: 'You do not have an active subscription. Please use /start to set up your account.',
-        };
+        subscription = await this.context.services.subscriptionsService.getUserLastSubscription(user.id);
       }
 
       // Format subscription details
       let message = '💳 <b>Account & Credits</b>\n\n';
       message += '<b>📋 Subscription Details:</b>\n';
-      message += `• <b>Tier:</b> ${subscription.tier.charAt(0).toUpperCase() + subscription.tier.slice(1)}\n`;
-      message += `• <b>Status:</b> ${subscription.isActive ? '✅ Active' : '❌ Inactive'}\n`;
+
+      if (!subscription) {
+        message += '\nYou do not have an active subscription.';
+        return {
+          success: true,
+          message,
+        };
+      }
+      // Get plan name from plan_code
+      const plan = await this.context.services.subscriptionsService.getPlanByCode(subscription.planCode);
+      const planName = plan?.name || subscription.planCode.charAt(0).toUpperCase() + subscription.planCode.slice(1);
+      message += `• <b>Plan:</b> ${planName}\n`;
+      // Format status display
+      const statusDisplay = {
+        [SubscriptionStatus.ACTIVE]: '✅ Active',
+        [SubscriptionStatus.INACTIVE]: '❌ Inactive',
+        [SubscriptionStatus.CANCELLED]: '⚠️ Cancelled',
+        [SubscriptionStatus.EXPIRED]: '⏰ Expired',
+      }[subscription.status] || '❓ Unknown';
+      
+      message += `• <b>Status:</b> ${statusDisplay}\n`;
       message += `• <b>Credit Limit:</b> ${parseFloat(String(subscription.creditLimit)).toFixed(2)} credits\n`;
       message += `• <b>Period:</b> ${subscription.creditPeriodValue} ${subscription.creditPeriodUnit}${subscription.creditPeriodValue > 1 ? 's' : ''}\n`;
+      
+      // Add billing frequency and amount if available (from payment metadata)
+      if (subscription.paymentMetadata?.frequency) {
+        const frequency = subscription.paymentMetadata.frequency;
+        
+        // Get amount and currency if available
+        let billingInfo = frequency.charAt(0).toUpperCase() + frequency.slice(1); // 'daily' -> 'Daily', 'monthly' -> 'Monthly'
+        if (subscription.paymentMetadata.amount !== undefined) {
+          const amount = parseFloat(String(subscription.paymentMetadata.amount));
+          
+          // Try to get currency from Stripe if price_id is available
+          let currencySymbol = '£'; // Default to GBP
+          if (subscription.paymentMetadata.price_id) {
+            try {
+              const price = await this.context.services.stripeService.getPrice(
+                subscription.paymentMetadata.price_id,
+              );
+              currencySymbol = this.context.services.stripeService.getCurrencySymbol(price.currency);
+            } catch (error) {
+              // If fetching currency fails, use default
+              this.logger.debug(`Could not fetch currency for price ${subscription.paymentMetadata.price_id}, using default`);
+            }
+          }
+          
+          billingInfo = `${currencySymbol}${amount.toFixed(2)}/${frequency}`;
+        }
+        
+        message += `• <b>Billing:</b> ${billingInfo}\n`;
+      }
 
       if (subscription.startDate) {
         message += `• <b>Start Date:</b> ${this.formatDate(subscription.startDate)}\n`;
@@ -255,12 +305,139 @@ export class CommandNode extends BaseNode {
     }
   }
 
-  private async handleSubscribeCommand(user: any): Promise<CommandResult> {
-    // TODO: Implement subscription flow
-    return {
-      success: false,
-      message: '🚧 Subscription management is coming soon!',
-    };
+  private async handleSubscribeCommand(
+    user: any,
+    message: FluctMessage,
+  ): Promise<CommandResult> {
+    try {
+      // Check if Stripe is configured
+      const stripeService = this.context.services.stripeService;
+      if (!stripeService || !stripeService.isConfigured()) {
+        return {
+          success: false,
+          message: '💳 Stripe payment is not configured. Please contact support.',
+        };
+      }
+
+      // Get all available plans (excluding free)
+      const allPlans = await this.context.services.subscriptionsService.getAllPlans();
+      const paidPlans = allPlans.filter((plan) => plan.planCode !== 'free' && plan.active);
+
+      if (paidPlans.length === 0) {
+        return {
+          success: false,
+          message: '💳 No subscription plans are available at the moment. Please try again later.',
+        };
+      }
+
+      // Get message metadata for platform info
+      const platform = message?.metadata.platform || MessagePlatform.TELEGRAM;
+      const platformIdentifier = message?.metadata.platformIdentifier || '';
+
+      // Build subscription message with checkout links
+      let subscriptionMessage = '💳 <b>Subscribe to a Plan</b>\n\n';
+      subscriptionMessage += 'Choose a plan to subscribe:\n\n';
+
+      for (const plan of paidPlans) {
+        const pricing = plan.pricing || {};
+        
+        subscriptionMessage += `🔹 <b>${plan.name || plan.planCode.toUpperCase()}</b>\n`;
+        subscriptionMessage += `   📊 Credits: ${plan.creditLimit} per ${plan.creditPeriodValue} ${plan.creditPeriodUnit}${plan.creditPeriodValue > 1 ? 's' : ''}\n`;
+
+        if (plan.capabilities) {
+          const caps = plan.capabilities;
+          if (caps.fleets) {
+            subscriptionMessage += `   🚢 Fleets: ${caps.fleets === 'unlimited' ? 'Unlimited' : caps.fleets}\n`;
+          }
+          if (caps.reminders) {
+            subscriptionMessage += `   🔔 Reminders: ${caps.reminders === 'unlimited' ? 'Unlimited' : caps.reminders}\n`;
+          }
+        }
+
+        subscriptionMessage += `   💵 Pricing:\n`;
+
+        // Process all pricing tiers generically
+        const pricingTierLabels: Record<string, string> = {
+          daily: '/day',
+          weekly: '/week',
+          monthly: '/month',
+          yearly: '/year',
+          one_time: ' one-time',
+          fixed: '',
+        };
+
+        // Define preferred order for display
+        const pricingOrder = ['daily', 'weekly', 'monthly', 'yearly', 'one_time', 'fixed'];
+
+        let hasPricing = false;
+
+        // Process pricing tiers in preferred order, then any others
+        const processedTiers = new Set<string>();
+
+        // First, process known tiers in order
+        for (const tierKey of pricingOrder) {
+          const tier = pricing[tierKey];
+          if (tier?.amount && tier?.stripe_price_id) {
+            processedTiers.add(tierKey);
+            const label = pricingTierLabels[tierKey] || '';
+            const pricingLine = await this.processPricingTier(
+              plan,
+              tierKey,
+              tier,
+              label,
+              user,
+              platform,
+              platformIdentifier,
+            );
+            if (pricingLine) {
+              subscriptionMessage += pricingLine;
+              hasPricing = true;
+            }
+          }
+        }
+
+        // Then process any other pricing tiers not in the known list
+        for (const [tierKey, tier] of Object.entries(pricing)) {
+          if (!processedTiers.has(tierKey) && tier?.amount && tier?.stripe_price_id) {
+            const label = pricingTierLabels[tierKey] || ` (${tierKey})`;
+            const pricingLine = await this.processPricingTier(
+              plan,
+              tierKey,
+              tier,
+              label,
+              user,
+              platform,
+              platformIdentifier,
+            );
+            if (pricingLine) {
+              subscriptionMessage += pricingLine;
+              hasPricing = true;
+            }
+          }
+        }
+
+        if (!hasPricing) {
+          subscriptionMessage += `      Contact for pricing\n`;
+        }
+
+        subscriptionMessage += `\n`;
+      }
+
+      subscriptionMessage += 'Click on any plan above to subscribe!';
+
+      return {
+        success: true,
+        message: subscriptionMessage,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error handling subscribe command: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return {
+        success: false,
+        message: 'Sorry, there was an error loading subscription plans. Please try again later.',
+      };
+    }
   }
 
   // ==================== Fleet Command Handlers ====================
@@ -868,6 +1045,50 @@ export class CommandNode extends BaseNode {
     }
 
     return parts.length > 0 ? parts.join(' | ') : '';
+  }
+
+  /**
+   * Generic method to process any pricing tier and return formatted message line
+   * Returns the formatted pricing line string, or null on error
+   */
+  private async processPricingTier(
+    plan: any,
+    tierKey: string,
+    tier: { amount: number; stripe_price_id: string },
+    label: string,
+    user: any,
+    platform: any,
+    platformIdentifier: string,
+  ): Promise<string | null> {
+    try {
+      // Get currency from Stripe Price object (source of truth)
+      const stripePrice = await this.context.services.stripeService.getPrice(
+        tier.stripe_price_id,
+      );
+      const currencySymbol = this.context.services.stripeService.getCurrencySymbol(
+        stripePrice.currency,
+      );
+
+      // Create checkout session
+      const session = await this.context.services.stripeService.createCheckoutSession(
+        {
+          planCode: plan.planCode,
+          userId: user.id,
+          platform: platform,
+          platformIdentifier: platformIdentifier,
+          priceId: tier.stripe_price_id,
+        },
+        plan,
+      );
+
+      // Return formatted pricing line
+      return `      • <a href="${session.url}">${currencySymbol}${tier.amount}${label}</a>\n`;
+    } catch (error) {
+      this.logger.warn(
+        `Failed to create ${tierKey} checkout session for plan ${plan.planCode}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
   }
 
   validateConfig(): boolean {

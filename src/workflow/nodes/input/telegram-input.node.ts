@@ -8,7 +8,7 @@ import { BaseNode } from '../../core/base-node';
 import { NodeExecutionContext } from '../../types/workflow.types';
 import {
   FluctMessage,
-  MessageSource,
+  MessagePlatform,
   MessageType,
   MessageStatus,
   MessageMetadata,
@@ -56,9 +56,9 @@ export class TelegramInputNode extends BaseNode {
     }
 
     // Ensure message is from Telegram
-    if (message.metadata.source !== MessageSource.TELEGRAM) {
+    if (message.metadata.platform !== MessagePlatform.TELEGRAM) {
       this.logger.warn(
-        `Message source is ${message.metadata.source}, expected TELEGRAM`,
+        `Message platform is ${message.metadata.platform}, expected TELEGRAM`,
       );
     }
 
@@ -87,12 +87,12 @@ export class TelegramInputNode extends BaseNode {
 
     // Download and convert media files to base64 if needed
     // This ensures downstream nodes (like AI agent) don't need to call source services
-    if (this.context?.services.telegramService && message.metadata.source === MessageSource.TELEGRAM) {
+    if (this.context?.services.telegramService && message.metadata.platform === MessagePlatform.TELEGRAM) {
       await this.enrichContentWithBase64(message.content);
     }
 
     this.logger.debug(
-      `Processing Telegram message ${message.id} from chat ${message.metadata.chatId}`,
+      `Processing Telegram message ${message.id} from chat ${message.metadata.platformIdentifier}`,
     );
 
     return message;
@@ -189,7 +189,7 @@ export class TelegramInputNode extends BaseNode {
     const message = execResult as FluctMessage;
 
     // Store in shared data for next nodes (mutable version)
-    // Note: source, chatId, userId are available via message.metadata.*
+    // Note: platform, platformIdentifier, userId are available via message.metadata.*
     context.sharedData.message = message;
 
     this.logger.debug(

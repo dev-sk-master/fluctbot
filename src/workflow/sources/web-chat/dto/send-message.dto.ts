@@ -18,12 +18,12 @@ export class SendMessageDto {
   userId: string;
 
   @ApiPropertyOptional({
-    description: 'Chat/Conversation ID (defaults to userId if not provided)',
+    description: 'Platform identifier (e.g., chat ID, session ID - defaults to userId if not provided)',
     example: 'chat123',
   })
   @IsString()
   @IsOptional()
-  chatId?: string;
+  platformIdentifier?: string;
 
   @ApiProperty({
     description: 'Message type',

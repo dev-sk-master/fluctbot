@@ -8,7 +8,7 @@ import { BaseNode } from '../../core/base-node';
 import { NodeExecutionContext } from '../../types/workflow.types';
 import {
   FluctMessage,
-  MessageSource,
+  MessagePlatform,
   MessageType,
   MessageStatus,
   MessageMetadata,
@@ -46,9 +46,9 @@ export class WebChatInputNode extends BaseNode {
     }
 
     // Ensure message is from Web Chat
-    if (message.metadata.source !== MessageSource.WEB_CHAT) {
+    if (message.metadata.platform !== MessagePlatform.WEB_CHAT) {
       this.logger.warn(
-        `Message source is ${message.metadata.source}, expected WEB_CHAT`,
+        `Message platform is ${message.metadata.platform}, expected WEB_CHAT`,
       );
     }
 
@@ -95,7 +95,7 @@ export class WebChatInputNode extends BaseNode {
     const message = execResult as FluctMessage;
 
     // Store in shared data for next nodes (mutable version)
-    // Note: source, chatId, userId are available via message.metadata.*
+    // Note: platform, platformIdentifier, userId are available via message.metadata.*
     context.sharedData.message = message;
 
     this.logger.debug(

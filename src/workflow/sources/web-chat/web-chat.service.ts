@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   FluctMessage,
-  MessageSource,
+  MessagePlatform,
   MessageType,
   MessageStatus,
   MessageMetadata,
@@ -23,7 +23,7 @@ export class WebChatService {
   convertToFluctMessage(dto: SendMessageDto): FluctMessage {
     const messageId = `web_chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const userId = dto.userId;
-    const chatId = dto.chatId || dto.userId;
+    const platformIdentifier = dto.platformIdentifier || dto.userId;
 
     // Build content based on type
     let content: MessageContent;
@@ -86,10 +86,9 @@ export class WebChatService {
     }
 
     const metadata: MessageMetadata = {
-      source: MessageSource.WEB_CHAT,
-      sourceId: messageId,
+      platform: MessagePlatform.WEB_CHAT,
+      platformIdentifier, // Chat/conversation ID (Web Chat session_id)
       userId,
-      chatId,
       timestamp: new Date(),
 
       // Raw source payload for downstream processing/debugging

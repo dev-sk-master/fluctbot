@@ -8,7 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import TelegramBot from 'node-telegram-bot-api';
 import {
   FluctMessage,
-  MessageSource,
+  MessagePlatform,
   MessageType,
   MessageStatus,
   MessageMetadata,
@@ -191,7 +191,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         }
 
         this.logger.log(
-          `Received message ${message.id} from chat ${message.metadata.chatId}`,
+          `Received message ${message.id} from chat ${message.metadata.platformIdentifier}`,
         );
 
         // Execute workflow if available
@@ -296,10 +296,9 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     }
 
     const metadata: MessageMetadata = {
-      source: MessageSource.TELEGRAM,
-      sourceId: msg.message_id.toString(),
+      platform: MessagePlatform.TELEGRAM,
+      platformIdentifier: chatId, // Chat/conversation ID (Telegram chat_id)
       userId,
-      chatId,
       timestamp: new Date(msg.date * 1000),
 
       // Raw source payload for downstream nodes (mentions, entities, etc.)
@@ -331,7 +330,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         }
 
         this.logger.log(
-          `Processing Telegram message ${message.id} from chat ${message.metadata.chatId}`,
+          `Processing Telegram message ${message.id} from chat ${message.metadata.platformIdentifier}`,
         );
 
         // Execute workflow if available

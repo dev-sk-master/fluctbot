@@ -4,7 +4,7 @@ import {
   NodeExecutionContext,
   NodeExecutionResult,
 } from '../../types/workflow.types';
-import { FluctMessage, MessageSource, MessageType } from '../../types/message.types';
+import { FluctMessage, MessagePlatform, MessageType } from '../../types/message.types';
 import { WorkflowNodeContext } from '../../services/workflow-node-context';
 import { Platform } from '../../../users/entities/user-platform.entity';
 
@@ -33,8 +33,8 @@ export class AccessControlNode extends BaseNode {
     const metadata = message.metadata;
 
     // Extract platform information from message source
-    const platform = this.mapMessageSourceToPlatform(metadata.source);
-    const platformIdentifier = metadata.userId;
+    const platform = this.mapMessagePlatformToPlatform(metadata.platform);
+    const platformIdentifier = metadata.platformIdentifier;
 
     return { message, platform, platformIdentifier };
   }
@@ -147,20 +147,42 @@ export class AccessControlNode extends BaseNode {
     //this.logger.debug(`[post] Context:\n${JSON.stringify(context, null, 2)}`);
     //this.logger.debug(`[post] PrepResult:\n${JSON.stringify(prepResult, null, 2)}`);
     //this.logger.debug(`[post] ExecResult:\n${JSON.stringify(execResult, null, 2)}`);
-    const result = execResult as { action: string };
+    const result = execResult as { action: string; user?: any };
+    const message = context.sharedData.message as FluctMessage;
+
+    // Save user message to conversation when user is found/created
+    // This ensures conversation history is available for AI Agent before processing
+    if (result.user && message) {
+      try {
+        const conversationsService = this.context.services.conversationsService;
+        await conversationsService.saveMessageToConversation(
+          result.user.id,
+          message.metadata.platform,
+          message.metadata.platformIdentifier,
+          message,
+          undefined, // No response yet, will be saved in unified-output
+        );
+      } catch (error) {
+        // Don't break workflow if conversation saving fails
+        this.logger.warn(
+          `Failed to save user message to conversation: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
     // Return the action for routing
     return result.action;
   }
 
-  private mapMessageSourceToPlatform(
-    source: MessageSource,
+  private mapMessagePlatformToPlatform(
+    platform: MessagePlatform,
   ): Platform | null {
-    switch (source) {
-      case MessageSource.TELEGRAM:
+    switch (platform) {
+      case MessagePlatform.TELEGRAM:
         return Platform.TELEGRAM;
-      case MessageSource.WHATSAPP:
+      case MessagePlatform.WHATSAPP:
         return Platform.WHATSAPP;
-      case MessageSource.WEB_CHAT:
+      case MessagePlatform.WEB_CHAT:
         return Platform.WEB;
       default:
         return null;

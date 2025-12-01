@@ -15,16 +15,21 @@ export interface SubscriptionPlanCapabilities {
   [key: string]: number | 'unlimited' | undefined;
 }
 
+export interface PricingTier {
+  amount: number;
+  stripe_price_id: string;
+}
+
 export interface SubscriptionPlanPricing {
   // Recurring pricing
-  monthly?: number;
-  yearly?: number;
-  weekly?: number;
+  monthly?: PricingTier;
+  yearly?: PricingTier;
+  weekly?: PricingTier;
   // One-time pricing
-  one_time?: number;
+  one_time?: PricingTier;
   // Fixed pricing
-  fixed?: number;
-  [key: string]: number | undefined;
+  fixed?: PricingTier;
+  [key: string]: PricingTier | undefined;
 }
 
 @Entity('subscription_plans')

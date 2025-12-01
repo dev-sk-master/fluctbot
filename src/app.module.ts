@@ -12,6 +12,7 @@ import { TelegramModule } from './workflow/sources/telegram/telegram.module';
 import { WebChatModule } from './workflow/sources/web-chat/web-chat.module';
 import { NgrokModule } from './common/ngrok/ngrok.module';
 import { CommonModule } from './common/common.module';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
@@ -28,6 +29,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
     WorkflowModule,
     TelegramModule,
     WebChatModule,
+    SubscriptionsModule,
   ],
   controllers: [AppController],
   providers: [

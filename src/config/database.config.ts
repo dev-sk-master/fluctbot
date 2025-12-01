@@ -23,7 +23,7 @@ export const databaseConfig = registerAs(
     username: process.env.DB_USERNAME || 'postgres',
     password: process.env.DB_PASSWORD || 'postgres',
     database: process.env.DB_NAME || 'fluctbot',
-    synchronize: process.env.NODE_ENV !== 'production',
+    synchronize: false, // Always false - use migrations for schema changes
     logging: process.env.NODE_ENV === 'development',
     ssl:
       process.env.DB_SSL === 'true'

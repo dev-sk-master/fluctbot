@@ -6,21 +6,24 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from 'typeorm';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { User } from '../../users/entities/user.entity';
-
-export enum SubscriptionTier {
-  FREE = 'free',
-  BASIC = 'basic',
-  PRO = 'pro',
-}
+import { PaymentProvider } from '../entities/payment-account.entity';
 
 export enum CreditPeriodUnit {
   DAY = 'day',
   WEEK = 'week',
   MONTH = 'month',
   YEAR = 'year',
+}
+
+export enum SubscriptionStatus {
+  ACTIVE = 'active',
+  INACTIVE = 'inactive',
+  CANCELLED = 'cancelled',
+  EXPIRED = 'expired',
 }
 
 @Entity('subscriptions')
@@ -34,11 +37,10 @@ export class Subscription {
   userId: number;
 
   @ApiProperty({
-    enum: SubscriptionTier,
-    description: 'Subscription tier',
+    description: 'Subscription plan code (e.g., free, basic, pro)',
   })
-  @Column({ type: 'varchar', length: 50 })
-  tier: SubscriptionTier;
+  @Column({ type: 'varchar', length: 50, name: 'plan_code' })
+  planCode: string;
 
   @ApiProperty({ description: 'Credit limit', example: 10.0 })
   @Column({
@@ -83,18 +85,60 @@ export class Subscription {
   @Column({ type: 'timestamp', name: 'end_date', nullable: true })
   endDate?: Date;
 
-  @ApiProperty({ description: 'Whether subscription is active', default: true })
-  @Column({ type: 'boolean', name: 'is_active', default: true, nullable: true })
-  isActive?: boolean;
+  @ApiProperty({
+    enum: SubscriptionStatus,
+    description: 'Subscription status',
+    default: SubscriptionStatus.INACTIVE,
+  })
+  @Column({
+    type: 'enum',
+    enum: SubscriptionStatus,
+    default: SubscriptionStatus.INACTIVE,
+    name: 'status',
+  })
+  @Index('idx_subscriptions_status', ['status'])
+  status: SubscriptionStatus;
 
-  @ApiProperty({ description: 'Stripe subscription ID', required: false })
+  @ApiPropertyOptional({
+    description: 'Date when subscription cancellation was requested (null if not canceled)',
+  })
+  @Column({ type: 'timestamp', name: 'canceled_at', nullable: true })
+  canceledAt?: Date;
+
+  @ApiPropertyOptional({
+    description: 'Payment provider (stripe, paypal, square, etc.)',
+    enum: PaymentProvider,
+    example: PaymentProvider.STRIPE,
+  })
+  @Column({
+    type: 'varchar',
+    length: 50,
+    name: 'payment_provider',
+    nullable: true,
+  })
+  @Index('idx_subscriptions_payment_provider', ['payment_provider', 'payment_provider_subscription_id'])
+  paymentProvider?: PaymentProvider;
+
+  @ApiPropertyOptional({
+    description: 'Subscription ID from payment provider (e.g., Stripe subscription ID)',
+    maxLength: 255,
+    example: 'sub_1234567890',
+  })
   @Column({
     type: 'varchar',
     length: 255,
-    name: 'stripe_subscription_id',
+    name: 'payment_provider_subscription_id',
     nullable: true,
   })
-  stripeSubscriptionId?: string;
+  paymentProviderSubscriptionId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Payment metadata (frequency, price_id, etc.) - provider-agnostic',
+    example: { frequency: 'daily', price_id: 'price_123', billing_period: 'day' },
+    additionalProperties: true,
+  })
+  @Column({ type: 'jsonb', default: '{}', nullable: true, name: 'payment_metadata' })
+  paymentMetadata?: Record<string, any>;
 
   @ApiProperty({ description: 'Date when subscription was created' })
   @CreateDateColumn({ name: 'created_at' })
