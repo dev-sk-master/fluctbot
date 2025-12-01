@@ -444,11 +444,11 @@ console.log('handleWebhookEvent',JSON.stringify(event,null,2))
       }
 
       // Get current_period_end from subscription items (this is the actual billing period end)
-      const items = (stripeSubscription as any).items?.data || [];
-      const currentPeriodEnd = items.length > 0 
-        ? items[0].current_period_end 
+      const items = (stripeSubscription as any).items || {};
+      const currentPeriodEnd = items.data && items.data.length > 0 
+        ? items.data[0].current_period_end 
         : (stripeSubscription as any).current_period_end;
-      
+  
       const endDate = currentPeriodEnd ? new Date(currentPeriodEnd * 1000) : new Date();
 
       // Get canceled_at from Stripe subscription object (when cancellation actually happened)
@@ -522,8 +522,8 @@ console.log('handleWebhookEvent',JSON.stringify(event,null,2))
       // Send platform notifications to all user platforms
       if (user.platforms && user.platforms.length > 0) {
         // Format end date for user-friendly message (subscription.endDate should be set from updateSubscriptionStatus)
-        const endDateFormatted = subscription.endDate
-          ? new Date(subscription.endDate).toLocaleDateString('en-US', {
+        const endDateFormatted = endDate
+          ? new Date(endDate).toLocaleDateString('en-US', {
               year: 'numeric',
               month: 'long',
               day: 'numeric',

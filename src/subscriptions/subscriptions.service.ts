@@ -379,12 +379,13 @@ export class SubscriptionsService {
       );
       return null;
     }
-
+  
     subscription.endDate = endDate;
     if (canceledAt) {
       subscription.canceledAt = canceledAt;
     }
     subscription.status = SubscriptionStatus.INACTIVE;
+
 
     return await this.subscriptionRepository.save(subscription);
   }
