@@ -1,2 +1,0 @@
-- `npm install`
-- `npx ts-node hello-world.ts`
